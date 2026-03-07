@@ -1,0 +1,29 @@
+# Core
+python-dotenv==1.1.0
+sqlalchemy==2.0.36
+
+# Scraping
+requests==2.32.3
+beautifulsoup4==4.13.3
+lxml==5.3.1
+selenium==4.27.1
+
+# Email
+sendgrid==6.11.0
+
+# WhatsApp
+twilio==9.4.3
+
+# Scheduling
+apscheduler==3.11.0
+
+# Utilidades
+fake-useragent==2.0.3
+phonenumbers==8.13.52
+validators==0.34.0
+
+# Export
+openpyxl==3.1.5
+
+# Testing
+pytest==8.3.4
