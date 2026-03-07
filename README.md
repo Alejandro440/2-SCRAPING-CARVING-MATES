@@ -73,66 +73,155 @@ docker run -p 5001:5001 --env-file .env surf-scraper
 
 ---
 
-## Como usar la API
+## API Reference
 
-El sistema expone una API REST. Todas las peticiones se hacen con `curl` (o cualquier cliente HTTP como Postman, Insomnia, etc.) contra `http://localhost:5001`.
+El sistema expone una API REST en `http://localhost:5001`. Todas las peticiones se hacen con `curl`, Postman, o cualquier cliente HTTP.
 
 Necesitas **dos terminales**:
 1. **Terminal 1**: ejecuta `python main.py` (deja el servidor corriendo)
 2. **Terminal 2**: desde aqui lanzas los comandos curl
 
-### Paso 1: Buscar negocios
+Si `API_KEY_ENABLED=true` en `.env`, todas las peticiones necesitan el header `X-API-KEY: tu_clave`.
 
-Esto ejecuta los 5 scrapers (web + email + phone + social). Tarda ~2 minutos por busqueda.
+---
 
-```bash
-curl -X POST http://localhost:5001/api/scraping/search \
-  -H "Content-Type: application/json" \
-  -d '{"deporte": "surf", "locacion": "Bali"}'
-```
+### `GET /`
 
-Puedes filtrar por tipo de negocio y cambiar el idioma de busqueda:
+Health check. Sin body.
 
 ```bash
-curl -X POST http://localhost:5001/api/scraping/search \
-  -H "Content-Type: application/json" \
-  -d '{
-    "deporte": "surf",
-    "locacion": "Bali",
-    "tipo_negocio": "escuela",
-    "max_resultados": 50,
-    "idioma": "en"
-  }'
+curl http://localhost:5001/
 ```
 
-**Campos:**
-| Campo | Tipo | Obligatorio | Default | Ejemplo |
-|-------|------|-------------|---------|---------|
-| deporte | string | si | - | "surf", "yoga", "kitesurf" |
-| locacion | string | si | - | "Bali", "Costa Rica", "Portugal" |
-| tipo_negocio | string | no | null | "escuela", "camp", "retreat" |
-| max_resultados | int | no | 50 | 1-200 |
-| idioma | string | no | "en" | "en", "es" |
+**Respuesta:**
+```json
+{"status": "ok", "service": "Surf Scraper API"}
+```
 
-### Paso 2: Ver estadisticas
+---
+
+### `GET /api/stats`
+
+Estadisticas de la base de datos. Sin body.
 
 ```bash
 curl http://localhost:5001/api/stats
 ```
 
-Devuelve cuantos negocios hay en la DB, cuantos tienen email, telefono, etc.
+**Respuesta:**
+```json
+{
+  "status": "success",
+  "stats": {
+    "total_negocios": 57,
+    "con_email": 28,
+    "con_telefono": 18,
+    "contactados": 0,
+    "por_deporte": {"surf": 57},
+    "por_tipo": {"escuela": 30, "camp": 16, "alquiler": 8, "retreat": 3}
+  },
+  "ultimas_ejecuciones": [...]
+}
+```
 
-### Paso 3: Exportar datos
+---
 
-Los datos se devuelven en la respuesta HTTP. Para guardarlos en un archivo, usa `-o`:
+### `POST /api/scraping/search`
 
+Ejecuta el pipeline completo de scraping (web + email + phone + social). Tarda ~2 minutos.
+
+**Body JSON:**
+```json
+{
+  "deporte": "surf",           // obligatorio - "surf", "yoga", "kitesurf", etc.
+  "locacion": "Bali",          // obligatorio - "Bali", "Costa Rica", "Portugal", etc.
+  "tipo_negocio": "escuela",   // opcional (default null) - "escuela", "camp", "retreat", "shop"
+  "max_resultados": 50,        // opcional (default 50) - entre 1 y 200
+  "idioma": "en"               // opcional (default "en") - idioma de busqueda
+}
+```
+
+**Ejemplo:**
 ```bash
-# Ver en pantalla (JSON)
+curl -X POST http://localhost:5001/api/scraping/search \
+  -H "Content-Type: application/json" \
+  -d '{"deporte": "surf", "locacion": "Bali"}'
+```
+
+**Respuesta:**
+```json
+{
+  "status": "success",
+  "message": "Scraping completado correctamente",
+  "input": {"deporte": "surf", "locacion": "Bali", ...},
+  "summary": {
+    "total_resultados": 57,
+    "negocios_encontrados_web": 50,
+    "fuentes_utilizadas": ["google", "duckduckgo", "directorios"],
+    "errores": []
+  },
+  "resultados": [
+    {
+      "nombre": "Odysseys Surf School",
+      "tipo_negocio": "escuela",
+      "deporte": "surf",
+      "pais": "Indonesia",
+      "website": "https://odysseysurfschool.com",
+      "emails": ["info@odysseysurfschool.com"],
+      "telefonos": ["+6281234567890"],
+      "redes_sociales": {"instagram": "https://instagram.com/odysseysurfschool"},
+      ...
+    },
+    ...
+  ]
+}
+```
+
+---
+
+### `POST /api/scraping/trips`
+
+Busqueda especializada de trips y retreats.
+
+**Body JSON:**
+```json
+{
+  "deporte": "yoga",           // obligatorio
+  "locacion": "Costa Rica",    // obligatorio
+  "max_resultados": 30         // opcional (default 30)
+}
+```
+
+**Ejemplo:**
+```bash
+curl -X POST http://localhost:5001/api/scraping/trips \
+  -H "Content-Type: application/json" \
+  -d '{"deporte": "yoga", "locacion": "Costa Rica"}'
+```
+
+---
+
+### `POST /api/scraping/export`
+
+Exporta negocios de la base de datos. Los datos se devuelven en la respuesta HTTP. Para guardarlos en un archivo, usa `-o nombre.json`.
+
+**Body JSON:**
+```json
+{
+  "deporte": "surf",      // opcional - sin filtro = exporta todo
+  "locacion": "Bali",     // opcional
+  "formato": "json"       // opcional (default "json") - "json" o "csv"
+}
+```
+
+**Ejemplos:**
+```bash
+# Ver en pantalla
 curl -X POST http://localhost:5001/api/scraping/export \
   -H "Content-Type: application/json" \
   -d '{"deporte": "surf", "locacion": "Bali"}'
 
-# Guardar como archivo JSON
+# Guardar como JSON
 curl -X POST http://localhost:5001/api/scraping/export \
   -H "Content-Type: application/json" \
   -d '{"deporte": "surf", "locacion": "Bali"}' \
@@ -150,20 +239,26 @@ curl -X POST http://localhost:5001/api/scraping/export \
   -d '{}' -o export_todo.json
 ```
 
-### Buscar trips y retreats
+> **Nota:** El archivo se guarda en el directorio desde donde ejecutas el curl. Usa `-o ~/Desktop/export.json` para guardarlo en el escritorio.
 
-Busqueda especializada en plataformas de trips:
+---
 
-```bash
-curl -X POST http://localhost:5001/api/scraping/trips \
-  -H "Content-Type: application/json" \
-  -d '{"deporte": "yoga", "locacion": "Costa Rica"}'
+### `POST /api/contact/email`
+
+Envia emails a negocios pendientes. Requiere configurar SMTP o SendGrid en `.env`.
+
+**Body JSON:**
+```json
+{
+  "deporte": "surf",                // opcional
+  "locacion": "Bali",              // opcional
+  "template": "escuela_inicial",   // opcional (default "escuela_inicial")
+  "max_envios": 50,                // opcional (default 50)
+  "dry_run": true                  // opcional (default true) - true = simula sin enviar
+}
 ```
 
-### Enviar emails (contacto automatizado)
-
-Requiere configurar SMTP o SendGrid en `.env`. Por defecto usa `dry_run: true` (simula sin enviar realmente).
-
+**Ejemplos:**
 ```bash
 # Simulacion (ver que haria sin enviar)
 curl -X POST http://localhost:5001/api/contact/email \
@@ -173,21 +268,7 @@ curl -X POST http://localhost:5001/api/contact/email \
 # Envio real
 curl -X POST http://localhost:5001/api/contact/email \
   -H "Content-Type: application/json" \
-  -d '{
-    "deporte": "surf",
-    "locacion": "Bali",
-    "dry_run": false,
-    "template": "escuela_inicial"
-  }'
-```
-
-### Autenticacion con API Key (opcional)
-
-Si en `.env` pones `API_KEY_ENABLED=true`, todas las peticiones necesitan el header `X-API-KEY`:
-
-```bash
-curl http://localhost:5001/api/stats \
-  -H "X-API-KEY: tu_api_key_secreta"
+  -d '{"deporte": "surf", "locacion": "Bali", "dry_run": false, "template": "escuela_inicial"}'
 ```
 
 ---
