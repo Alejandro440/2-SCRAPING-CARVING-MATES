@@ -29,19 +29,15 @@ La base de datos **se acumula**: cada busqueda nueva anade negocios. Si un negoc
 ## Instalacion
 
 ```bash
-# Clonar el repositorio
 git clone https://github.com/Alejandro440/2-SCRAPING-CARVING-MATES.git
 cd surf-scraper-system
 
-# Crear entorno virtual (recomendado)
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
 # venv\Scripts\activate   # Windows
 
-# Instalar dependencias
 pip install -r requirements.txt
 
-# Configurar variables de entorno
 cp .env.example .env
 # Editar .env con tus API keys (ver seccion Configuracion)
 ```
@@ -52,22 +48,14 @@ cp .env.example .env
 python main.py
 ```
 
-El servidor arranca en `http://localhost:5001`. Comprueba que funciona:
-
-```bash
-curl http://localhost:5001/
-# {"service":"Surf Scraper API","status":"ok"}
-```
+El servidor arranca en `http://localhost:5001`.
 
 > **Nota:** En Mac el puerto 5000 esta ocupado por AirPlay Receiver, por eso usamos 5001.
 
 ## Ejecucion con Docker
 
 ```bash
-# Construir la imagen
 docker build -t surf-scraper .
-
-# Ejecutar
 docker run -p 5001:5001 --env-file .env surf-scraper
 ```
 
@@ -75,13 +63,19 @@ docker run -p 5001:5001 --env-file .env surf-scraper
 
 ## API Reference
 
-El sistema expone una API REST en `http://localhost:5001`. Todas las peticiones se hacen con `curl`, Postman, o cualquier cliente HTTP.
+**Base URL:** `http://localhost:5001`
 
-Necesitas **dos terminales**:
-1. **Terminal 1**: ejecuta `python main.py` (deja el servidor corriendo)
-2. **Terminal 2**: desde aqui lanzas los comandos curl
+**Headers requeridos en todos los POST:**
+```
+Content-Type: application/json
+```
 
-Si `API_KEY_ENABLED=true` en `.env`, todas las peticiones necesitan el header `X-API-KEY: tu_clave`.
+**Header opcional (si `API_KEY_ENABLED=true` en `.env`):**
+```
+X-API-KEY: tu_clave
+```
+
+Necesitas **dos terminales**: una ejecutando `python main.py` y otra para lanzar las peticiones.
 
 ---
 
@@ -89,14 +83,148 @@ Si `API_KEY_ENABLED=true` en `.env`, todas las peticiones necesitan el header `X
 
 Health check. Sin body.
 
-```bash
-curl http://localhost:5001/
+**Request:**
+```
+GET http://localhost:5001/
 ```
 
-**Respuesta:**
+**Response 200:**
 ```json
-{"status": "ok", "service": "Surf Scraper API"}
+{
+  "status": "ok",
+  "service": "Surf Scraper API"
+}
 ```
+
+---
+
+### `POST /api/scraping/search`
+
+Ejecuta el pipeline completo de scraping (web + email + phone + social). Tarda ~2 minutos.
+
+**Headers:**
+```
+Content-Type: application/json
+```
+
+**Body JSON:**
+
+| Campo | Tipo | Obligatorio | Default | Valores posibles |
+|---|---|---|---|---|
+| `deporte` | string | si | — | `"surf"`, `"yoga"`, `"kitesurf"`, `"snowboard"`, `"bodyboard"`, `"ski"`, `"windsurf"`, `"wakeboard"`, `"paddlesurf"`, `"kayak"`, `"skate"` |
+| `locacion` | string | si | — | `"Bali"`, `"Portugal"`, `"Costa Rica"`, etc. |
+| `tipo_negocio` | string | no | `null` | `"escuela"`, `"alquiler"`, `"retreat"`, `"trip"`, `"camp"`, `"shop"` |
+| `max_resultados` | int | no | `50` | `1` a `200` |
+| `idioma` | string | no | `"en"` | `"en"`, `"es"`, etc. |
+
+**Ejemplo Postman / curl:**
+```bash
+curl -X POST http://localhost:5001/api/scraping/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "deporte": "surf",
+    "locacion": "Bali"
+  }'
+```
+
+**Response 200:**
+```json
+{
+  "status": "success",
+  "message": "Scraping completado correctamente",
+  "input": {
+    "deporte": "surf",
+    "locacion": "Bali",
+    "tipo_negocio": null,
+    "max_resultados": 50,
+    "idioma": "en"
+  },
+  "summary": {
+    "total_resultados": 57,
+    "negocios_encontrados_web": 50,
+    "fuentes_utilizadas": ["google", "duckduckgo", "directorios"],
+    "errores": []
+  },
+  "resultados": [
+    {
+      "id": "a1b2c3d4-...",
+      "nombre": "Odysseys Surf School",
+      "tipo_negocio": "escuela",
+      "deporte": "surf",
+      "deportes_secundarios": [],
+      "descripcion": null,
+      "pais": "Indonesia",
+      "region": "Bali",
+      "ciudad": "Kuta",
+      "direccion": null,
+      "latitud": null,
+      "longitud": null,
+      "telefonos": ["+6281234567890"],
+      "emails": ["info@odysseysurfschool.com"],
+      "website": "https://odysseysurfschool.com",
+      "redes_sociales": {"instagram": "https://instagram.com/odysseysurf"},
+      "precio_referencia": null,
+      "rating": null,
+      "reviews_count": null,
+      "fuente": "duckduckgo",
+      "fecha_scraping": "2026-03-07",
+      "contactado": false,
+      "fecha_contacto": null,
+      "metodo_contacto": null,
+      "respuesta": null
+    }
+  ]
+}
+```
+
+---
+
+### `POST /api/scraping/trips`
+
+Busqueda especializada de trips y retreats.
+
+**Headers:**
+```
+Content-Type: application/json
+```
+
+**Body JSON:**
+
+| Campo | Tipo | Obligatorio | Default |
+|---|---|---|---|
+| `deporte` | string | si | — |
+| `locacion` | string | si | — |
+| `max_resultados` | int | no | `30` |
+
+**Ejemplo:**
+```bash
+curl -X POST http://localhost:5001/api/scraping/trips \
+  -H "Content-Type: application/json" \
+  -d '{
+    "deporte": "yoga",
+    "locacion": "Costa Rica"
+  }'
+```
+
+**Response 200:**
+```json
+{
+  "status": "success",
+  "message": "Busqueda de trips completada",
+  "input": {
+    "deporte": "yoga",
+    "locacion": "Costa Rica",
+    "max_resultados": 30
+  },
+  "summary": {
+    "total_resultados": 15,
+    "errores": []
+  },
+  "resultados": [ ... ]
+}
+```
+
+> **Nota:** El `summary` de trips NO incluye `negocios_encontrados_web` ni `fuentes_utilizadas` (solo `total_resultados` y `errores`).
 
 ---
 
@@ -104,11 +232,12 @@ curl http://localhost:5001/
 
 Estadisticas de la base de datos. Sin body.
 
-```bash
-curl http://localhost:5001/api/stats
+**Request:**
+```
+GET http://localhost:5001/api/stats
 ```
 
-**Respuesta:**
+**Response 200:**
 ```json
 {
   "status": "success",
@@ -120,126 +249,97 @@ curl http://localhost:5001/api/stats
     "por_deporte": {"surf": 57},
     "por_tipo": {"escuela": 30, "camp": 16, "alquiler": 8, "retreat": 3}
   },
-  "ultimas_ejecuciones": [...]
-}
-```
-
----
-
-### `POST /api/scraping/search`
-
-Ejecuta el pipeline completo de scraping (web + email + phone + social). Tarda ~2 minutos.
-
-**Body JSON:**
-```json
-{
-  "deporte": "surf",           // obligatorio - "surf", "yoga", "kitesurf", etc.
-  "locacion": "Bali",          // obligatorio - "Bali", "Costa Rica", "Portugal", etc.
-  "tipo_negocio": "escuela",   // opcional (default null) - "escuela", "camp", "retreat", "shop"
-  "max_resultados": 50,        // opcional (default 50) - entre 1 y 200
-  "idioma": "en"               // opcional (default "en") - idioma de busqueda
-}
-```
-
-**Ejemplo:**
-```bash
-curl -X POST http://localhost:5001/api/scraping/search \
-  -H "Content-Type: application/json" \
-  -d '{"deporte": "surf", "locacion": "Bali"}'
-```
-
-**Respuesta:**
-```json
-{
-  "status": "success",
-  "message": "Scraping completado correctamente",
-  "input": {"deporte": "surf", "locacion": "Bali", ...},
-  "summary": {
-    "total_resultados": 57,
-    "negocios_encontrados_web": 50,
-    "fuentes_utilizadas": ["google", "duckduckgo", "directorios"],
-    "errores": []
-  },
-  "resultados": [
+  "ultimas_ejecuciones": [
     {
-      "nombre": "Odysseys Surf School",
-      "tipo_negocio": "escuela",
+      "pipeline": "web",
       "deporte": "surf",
-      "pais": "Indonesia",
-      "website": "https://odysseysurfschool.com",
-      "emails": ["info@odysseysurfschool.com"],
-      "telefonos": ["+6281234567890"],
-      "redes_sociales": {"instagram": "https://instagram.com/odysseysurfschool"},
-      ...
-    },
-    ...
+      "locacion": "Bali",
+      "resultados_nuevos": 45,
+      "errores": 1,
+      "fecha": "2026-03-07 03:23:08.111939"
+    }
   ]
 }
 ```
 
 ---
 
-### `POST /api/scraping/trips`
-
-Busqueda especializada de trips y retreats.
-
-**Body JSON:**
-```json
-{
-  "deporte": "yoga",           // obligatorio
-  "locacion": "Costa Rica",    // obligatorio
-  "max_resultados": 30         // opcional (default 30)
-}
-```
-
-**Ejemplo:**
-```bash
-curl -X POST http://localhost:5001/api/scraping/trips \
-  -H "Content-Type: application/json" \
-  -d '{"deporte": "yoga", "locacion": "Costa Rica"}'
-```
-
----
-
 ### `POST /api/scraping/export`
 
-Exporta negocios de la base de datos. Los datos se devuelven en la respuesta HTTP. Para guardarlos en un archivo, usa `-o nombre.json`.
+Exporta negocios de la base de datos. Los datos se devuelven en la respuesta HTTP. Para guardarlos en un archivo, usa `-o nombre.json` en curl o "Save Response" en Postman.
 
-**Body JSON:**
-```json
-{
-  "deporte": "surf",      // opcional - sin filtro = exporta todo
-  "locacion": "Bali",     // opcional
-  "formato": "json"       // opcional (default "json") - "json" o "csv"
-}
+**Headers:**
+```
+Content-Type: application/json
 ```
 
-**Ejemplos:**
+**Body JSON:**
+
+| Campo | Tipo | Obligatorio | Default |
+|---|---|---|---|
+| `deporte` | string | no | `null` (exporta todo) |
+| `locacion` | string | no | `null` (exporta todo) |
+| `formato` | string | no | `"json"` |
+
+Valores de `formato`: `"json"` o `"csv"`.
+
+**Ejemplo — JSON en pantalla:**
 ```bash
-# Ver en pantalla
 curl -X POST http://localhost:5001/api/scraping/export \
   -H "Content-Type: application/json" \
   -d '{"deporte": "surf", "locacion": "Bali"}'
+```
 
-# Guardar como JSON
+**Ejemplo — guardar como archivo:**
+```bash
 curl -X POST http://localhost:5001/api/scraping/export \
   -H "Content-Type: application/json" \
   -d '{"deporte": "surf", "locacion": "Bali"}' \
   -o export_surf_bali.json
-
-# Guardar como CSV (abrir con Excel/Google Sheets)
-curl -X POST http://localhost:5001/api/scraping/export \
-  -H "Content-Type: application/json" \
-  -d '{"deporte": "surf", "locacion": "Bali", "formato": "csv"}' \
-  -o export_surf_bali.csv
-
-# Exportar TODA la base de datos
-curl -X POST http://localhost:5001/api/scraping/export \
-  -H "Content-Type: application/json" \
-  -d '{}' -o export_todo.json
 ```
 
-> **Nota:** El archivo se guarda en el directorio desde donde ejecutas el curl. Usa `-o ~/Desktop/export.json` para guardarlo en el escritorio.
+**Ejemplo — CSV:**
+```bash
+curl -X POST http://localhost:5001/api/scraping/export \
+  -H "Content-Type: application/json" \
+  -d '{"formato": "csv"}' \
+  -o export_todo.csv
+```
+
+> **Nota:** El archivo se guarda en el directorio desde donde ejecutas curl.
+
+**Response 200 (formato json):**
+```json
+{
+  "status": "success",
+  "total": 57,
+  "resultados": [
+    {
+      "nombre": "Odysseys Surf School",
+      "tipo_negocio": "escuela",
+      "deporte": "surf",
+      "pais": "Indonesia",
+      "region": "Bali",
+      "ciudad": "Kuta",
+      "website": "https://odysseysurfschool.com",
+      "emails": "info@odysseysurfschool.com",
+      "telefonos": "+6281234567890",
+      "instagram": "https://instagram.com/odysseysurf",
+      "facebook": "",
+      "rating": null,
+      "reviews_count": null,
+      "precio_referencia": null,
+      "fuente": "duckduckgo",
+      "contactado": false,
+      "respuesta": null
+    }
+  ]
+}
+```
+
+> **Nota:** El formato de export es diferente al de search. En export, `emails` y `telefonos` son strings separados por coma (no arrays), y `redes_sociales` se aplana a campos individuales (`instagram`, `facebook`).
+
+**Response 200 (formato csv):** Descarga directa del archivo `.csv` con los mismos campos.
 
 ---
 
@@ -247,28 +347,88 @@ curl -X POST http://localhost:5001/api/scraping/export \
 
 Envia emails a negocios pendientes. Requiere configurar SMTP o SendGrid en `.env`.
 
+**Headers:**
+```
+Content-Type: application/json
+```
+
 **Body JSON:**
+
+| Campo | Tipo | Obligatorio | Default |
+|---|---|---|---|
+| `deporte` | string | no | `null` |
+| `locacion` | string | no | `null` |
+| `template` | string | no | `"escuela_inicial"` |
+| `max_envios` | int | no | `50` |
+| `dry_run` | bool | no | `true` |
+
+Templates disponibles: `"escuela_inicial"`, `"retreat_inicial"`, `"followup"`.
+
+**Ejemplo — simulacion (no envia):**
+```bash
+curl -X POST http://localhost:5001/api/contact/email \
+  -H "Content-Type: application/json" \
+  -d '{
+    "deporte": "surf",
+    "locacion": "Bali",
+    "dry_run": true
+  }'
+```
+
+**Ejemplo — envio real:**
+```bash
+curl -X POST http://localhost:5001/api/contact/email \
+  -H "Content-Type: application/json" \
+  -d '{
+    "deporte": "surf",
+    "locacion": "Bali",
+    "dry_run": false,
+    "template": "escuela_inicial"
+  }'
+```
+
+**Response 200:**
 ```json
 {
-  "deporte": "surf",                // opcional
-  "locacion": "Bali",              // opcional
-  "template": "escuela_inicial",   // opcional (default "escuela_inicial")
-  "max_envios": 50,                // opcional (default 50)
-  "dry_run": true                  // opcional (default true) - true = simula sin enviar
+  "status": "success",
+  "message": "Contacto completado (dry run)",
+  "resultado": { ... }
 }
 ```
 
-**Ejemplos:**
-```bash
-# Simulacion (ver que haria sin enviar)
-curl -X POST http://localhost:5001/api/contact/email \
-  -H "Content-Type: application/json" \
-  -d '{"deporte": "surf", "locacion": "Bali", "dry_run": true}'
+---
 
-# Envio real
-curl -X POST http://localhost:5001/api/contact/email \
-  -H "Content-Type: application/json" \
-  -d '{"deporte": "surf", "locacion": "Bali", "dry_run": false, "template": "escuela_inicial"}'
+## Codigos de error
+
+Todas las respuestas de error siguen el mismo formato:
+
+```json
+{
+  "status": "error",
+  "message": "Descripcion del error"
+}
+```
+
+| Codigo | Cuando ocurre |
+|---|---|
+| `400` | Body no es JSON valido |
+| `400` | Falta campo obligatorio `deporte` o `locacion` |
+| `400` | `max_resultados` no es entero o esta fuera de rango (1-200) |
+| `400` | `formato` no es `"json"` ni `"csv"` |
+| `401` | `API_KEY_ENABLED=true` y falta header `X-API-KEY` o el valor es incorrecto |
+| `500` | Error interno (fallo de scraper, error de base de datos, etc.) |
+
+**Ejemplos de mensajes de error reales:**
+
+```json
+{"status": "error", "message": "El body debe ser JSON valido"}
+{"status": "error", "message": "El campo 'deporte' es obligatorio"}
+{"status": "error", "message": "El campo 'locacion' es obligatorio"}
+{"status": "error", "message": "max_resultados debe ser un entero entre 1 y 200"}
+{"status": "error", "message": "max_resultados debe ser un entero valido"}
+{"status": "error", "message": "formato debe ser 'json' o 'csv'"}
+{"status": "error", "message": "API key invalida o faltante. Envia el header X-API-KEY."}
+{"status": "error", "message": "Error interno: ..."}
 ```
 
 ---
@@ -279,26 +439,27 @@ curl -X POST http://localhost:5001/api/contact/email \
 # Terminal 1: arrancar el servidor
 python main.py
 
-# Terminal 2: buscar escuelas de surf en Bali
+# Terminal 2:
+
+# 1. Buscar escuelas de surf en Bali (~2 min)
 curl -X POST http://localhost:5001/api/scraping/search \
   -H "Content-Type: application/json" \
   -d '{"deporte": "surf", "locacion": "Bali"}'
-# (esperar ~2 min)
 
-# Buscar tambien en Portugal
+# 2. Buscar tambien en Portugal
 curl -X POST http://localhost:5001/api/scraping/search \
   -H "Content-Type: application/json" \
   -d '{"deporte": "surf", "locacion": "Portugal"}'
 
-# Ver cuantos negocios tenemos en total
+# 3. Ver cuantos negocios hay en la DB
 curl http://localhost:5001/api/stats
 
-# Exportar todo a CSV
+# 4. Exportar todo a CSV
 curl -X POST http://localhost:5001/api/scraping/export \
   -H "Content-Type: application/json" \
   -d '{"formato": "csv"}' -o todos_los_negocios.csv
 
-# Exportar solo Bali a JSON
+# 5. Exportar solo Bali a JSON
 curl -X POST http://localhost:5001/api/scraping/export \
   -H "Content-Type: application/json" \
   -d '{"deporte": "surf", "locacion": "Bali"}' -o bali.json
@@ -389,12 +550,6 @@ surf-scraper-system/
 │   └── exports/
 └── logs/
 ```
-
-## Deportes soportados
-
-surf, bodyboard, snowboard, ski, kitesurf, windsurf, wakeboard, paddlesurf, kayak, yoga, skate
-
-Agregar un nuevo deporte no requiere cambiar codigo — es solo un parametro en el JSON.
 
 ## Tests
 
