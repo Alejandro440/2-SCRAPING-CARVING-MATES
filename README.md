@@ -2,6 +2,76 @@
 
 Sistema modular de scraping y contacto automatizado para [Carving Mates](https://www.carvingmates.com) — una app que conecta escuelas de surf, retreats y experiencias deportivas con viajeros de todo el mundo.
 
+## Quick Start
+
+```bash
+# 1. Instalar
+git clone https://github.com/Alejandro440/2-SCRAPING-CARVING-MATES.git
+cd surf-scraper-system
+pip install -r requirements.txt
+cp .env.example .env
+
+# 2. Arrancar el servidor
+python main.py
+# -> http://localhost:5001
+
+# 3. Probar (en otra terminal)
+curl http://localhost:5001/
+
+# 4. Lanzar una busqueda
+curl -X POST http://localhost:5001/api/scraping/search \
+  -H "Content-Type: application/json" \
+  -d '{"deporte": "surf", "locacion": "Bali"}'
+```
+
+---
+
+## Arquitectura / Flujo del sistema
+
+```
+Request HTTP
+     |
+     v
+main.py                         # Arranca Flask en puerto 5001
+     |
+     v
+app/__init__.py                  # create_app() registra el Blueprint bajo /api
+     |
+     v
+app/api/routes.py                # Enruta la request al endpoint correspondiente
+     |                            Valida input (campos obligatorios, rangos)
+     |                            Gestiona autenticacion (X-API-KEY si esta habilitado)
+     v
+app/services/scraping_service.py # Orquesta los scrapers en secuencia:
+     |                            WebScraper -> EmailScraper -> PhoneScraper -> SocialScraper
+     v
+scrapers/                        # Cada scraper hereda de BaseScraper (fetch, retry,
+     |                            rate limiting, dedup) y escribe en la DB via SQLAlchemy
+     v
+database/models.py               # Modelo Negocio (SQLite en data/surf_scraper.db)
+     |                            Los resultados se persisten automaticamente
+     v
+app/api/routes.py                # Lee los negocios actualizados de la DB
+     |                            y devuelve JSON al cliente
+     v
+Response JSON
+```
+
+**Componentes clave:**
+
+| Capa | Archivos | Responsabilidad |
+|---|---|---|
+| **Entry point** | `main.py` | Arranca Flask |
+| **Routing** | `app/api/routes.py` | 6 endpoints, validacion, autenticacion |
+| **Servicio** | `app/services/scraping_service.py` | Orquesta pipelines, lee resultados de DB |
+| **Scrapers** | `scrapers/*.py` | 5 pipelines independientes, cada uno escribe en DB |
+| **Modelos** | `database/models.py` | `Negocio`, `LogScraping`, `LogContacto` (SQLAlchemy) |
+| **Config** | `config/settings.py` | Carga `.env`, define constantes globales |
+| **Utilidades** | `utils/*.py` | Logger, validadores, rate limiter, User-Agent rotation |
+| **Contacto** | `automation/*.py` | Email (SMTP/SendGrid) y WhatsApp (Twilio) |
+
+---
+
 ## Que hace
 
 El sistema tiene dos bloques independientes:
