@@ -2,6 +2,39 @@
 
 Sistema modular de scraping y contacto automatizado para [Carving Mates](https://www.carvingmates.com) — una app que conecta escuelas de surf, retreats y experiencias deportivas con viajeros de todo el mundo.
 
+## Endpoints
+
+**Base URL:** `http://localhost:5001`
+
+| Metodo | Ruta | Descripcion |
+|--------|------|-------------|
+| `GET` | `/` | Health check |
+| `POST` | `/api/scraping/search` | Buscar negocios (pipeline completo) |
+| `POST` | `/api/scraping/trips` | Buscar trips y retreats |
+| `GET` | `/api/stats` | Estadisticas de la base de datos |
+| `POST` | `/api/scraping/export` | Exportar datos (JSON o CSV) |
+| `POST` | `/api/contact/email` | Enviar emails a negocios |
+
+**Endpoint principal — ejemplo completo:**
+
+```
+POST http://localhost:5001/api/scraping/search
+Content-Type: application/json
+
+{"deporte": "surf", "locacion": "Bali"}
+```
+
+**Respuesta:**
+```json
+{
+  "status": "success",
+  "summary": {"total_resultados": 57, "fuentes_utilizadas": ["google", "duckduckgo", "directorios"]},
+  "resultados": [{"nombre": "Odysseys Surf School", "emails": ["info@odysseys.com"], "website": "https://..."}]
+}
+```
+
+---
+
 ## Quick Start
 
 ```bash
