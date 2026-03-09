@@ -4,19 +4,6 @@ Cada fuente tiene un nombre, URL base, y los deportes/tipos que soporta.
 Fácilmente extensible: solo agregar nuevas entradas al diccionario.
 """
 
-# Plantillas de búsqueda en Google Search
-# {deporte} y {locacion} se reemplazan en tiempo de ejecución
-GOOGLE_SEARCH_TEMPLATES = [
-    "{deporte} school {locacion}",
-    "{deporte} lessons {locacion}",
-    "{deporte} camp {locacion}",
-    "{deporte} rental {locacion}",
-    "{deporte} retreat {locacion}",
-    "{deporte} trip {locacion}",
-    "escuela de {deporte} {locacion}",
-    "clases de {deporte} {locacion}",
-]
-
 # Directorios especializados por deporte
 DIRECTORIOS = {
     "surf": [
@@ -55,16 +42,6 @@ DIRECTORIOS = {
             "tipos": ["escuela", "camp"],
         },
     ],
-}
-
-# Google Maps: tipos de búsqueda por tipo de negocio
-GOOGLE_MAPS_QUERIES = {
-    "escuela": "{deporte} school in {locacion}",
-    "alquiler": "{deporte} rental in {locacion}",
-    "retreat": "{deporte} retreat in {locacion}",
-    "trip": "{deporte} trip in {locacion}",
-    "camp": "{deporte} camp in {locacion}",
-    "shop": "{deporte} shop in {locacion}",
 }
 
 # Páginas internas donde buscar datos de contacto

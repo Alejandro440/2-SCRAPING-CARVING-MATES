@@ -121,9 +121,6 @@ def search():
             "input": {
                 "deporte": deporte,
                 "locacion": locacion,
-                "tipo_negocio": tipo_negocio,
-                "max_resultados": max_resultados,
-                "idioma": idioma,
             },
             "summary": resultado["summary"],
             "resultados": resultado["resultados"],

@@ -1,7 +1,7 @@
 """
-Pipeline 1: Scraper de Páginas Web.
-Busca negocios (escuelas, shops, retreats) por deporte y locación.
-Fuentes: Google Custom Search API, DuckDuckGo (fallback sin API), y directorios.
+Pipeline 1: Scraper de Paginas Web.
+Busca negocios (escuelas, shops, retreats) por deporte y locacion.
+Fuentes abiertas: DuckDuckGo HTML (sin API key) + directorios especializados.
 """
 
 import re
@@ -10,68 +10,53 @@ from urllib.parse import quote_plus, urljoin, urlparse
 import requests
 
 from scrapers.base_scraper import BaseScraper
-from config.settings import GOOGLE_API_KEY, GOOGLE_SEARCH_ENGINE_ID
-from config.sources import GOOGLE_SEARCH_TEMPLATES, DIRECTORIOS, GOOGLE_MAPS_QUERIES
+from config.sources import DIRECTORIOS
 from utils.helpers import limpiar_texto, truncar
 from utils.validators import validar_url, normalizar_url
 
 
 class WebScraper(BaseScraper):
     """
-    Busca negocios en la web por deporte y locación.
-    Estrategia: Google API → DuckDuckGo (fallback) → Directorios especializados.
+    Busca negocios en la web por deporte y locacion.
+    Estrategia: DuckDuckGo (principal) + directorios especializados.
+    No requiere API keys. Totalmente open source.
     """
 
     def __init__(self):
         super().__init__("web")
-        self._google_api_funciona = True  # Se desactiva si da error 403
 
     def ejecutar(self, deporte: str, locacion: str, **kwargs) -> list[dict]:
         """
-        Ejecuta la búsqueda de negocios.
+        Ejecuta la busqueda de negocios.
 
         Args:
             deporte: Deporte a buscar (ej: "surf").
-            locacion: Locación a buscar (ej: "Bali").
+            locacion: Locacion a buscar (ej: "Bali").
             tipo_negocio: Filtro opcional por tipo (ej: "escuela").
-            max_resultados: Máximo de resultados totales.
-            idioma: Idioma de búsqueda ("en", "es", etc.).
+            max_resultados: Maximo de resultados totales.
+            idioma: Idioma de busqueda ("en", "es", etc.).
 
         Returns:
             Lista de negocios encontrados como diccionarios.
         """
         tipo_negocio = kwargs.get("tipo_negocio")
         max_resultados = kwargs.get("max_resultados", 50)
-        idioma = kwargs.get("idioma", "en")
 
         resultados = []
         urls_vistas = set()
 
-        # 1. Intentar Google Custom Search API
-        if GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID and self._google_api_funciona:
-            self.logger.info("Buscando en Google Custom Search API...")
-            resultados_google = self._buscar_google(
-                deporte, locacion, tipo_negocio, idioma, max_resultados
-            )
-            for r in resultados_google:
-                url = r.get("website", "")
-                if url and url not in urls_vistas:
-                    urls_vistas.add(url)
-                    resultados.append(r)
+        # 1. DuckDuckGo como fuente principal (sin API key, siempre disponible)
+        self.logger.info("Buscando en DuckDuckGo...")
+        resultados_ddg = self._buscar_duckduckgo(
+            deporte, locacion, tipo_negocio, max_resultados
+        )
+        for r in resultados_ddg:
+            url = r.get("website", "")
+            if url and url not in urls_vistas:
+                urls_vistas.add(url)
+                resultados.append(r)
 
-        # 2. DuckDuckGo como fuente principal/fallback (siempre funciona, sin API key)
-        if len(resultados) < max_resultados:
-            self.logger.info("Buscando en DuckDuckGo...")
-            resultados_ddg = self._buscar_duckduckgo(
-                deporte, locacion, tipo_negocio, max_resultados - len(resultados)
-            )
-            for r in resultados_ddg:
-                url = r.get("website", "")
-                if url and url not in urls_vistas:
-                    urls_vistas.add(url)
-                    resultados.append(r)
-
-        # 3. Buscar en directorios especializados
+        # 2. Buscar en directorios especializados
         self.logger.info("Buscando en directorios especializados...")
         resultados_directorios = self._buscar_directorios(deporte, locacion, tipo_negocio)
         for r in resultados_directorios:
@@ -80,7 +65,7 @@ class WebScraper(BaseScraper):
                 urls_vistas.add(url)
                 resultados.append(r)
 
-        # 4. Guardar en base de datos
+        # 3. Guardar en base de datos
         for negocio in resultados[:max_resultados]:
             self.guardar_negocio(negocio)
 
@@ -95,11 +80,10 @@ class WebScraper(BaseScraper):
                            max_resultados: int = 30) -> list[dict]:
         """
         Busca negocios en DuckDuckGo HTML.
-        No requiere API key y no tiene límites estrictos.
+        No requiere API key y no tiene limites estrictos.
         """
         resultados = []
 
-        # Generar queries de búsqueda
         queries = self._generar_queries(deporte, locacion, tipo_negocio)
 
         for query in queries:
@@ -114,7 +98,6 @@ class WebScraper(BaseScraper):
                 item["fuente"] = "duckduckgo"
                 if tipo_negocio:
                     item["tipo_negocio"] = tipo_negocio
-                # Asignar locación
                 item.setdefault("region", locacion)
                 resultados.append(item)
 
@@ -123,7 +106,7 @@ class WebScraper(BaseScraper):
 
     def _duckduckgo_search(self, query: str) -> list[dict]:
         """
-        Ejecuta una búsqueda en DuckDuckGo HTML y parsea los resultados.
+        Ejecuta una busqueda en DuckDuckGo HTML y parsea los resultados.
         """
         url = "https://html.duckduckgo.com/html/"
         data = {"q": query, "b": ""}
@@ -138,10 +121,8 @@ class WebScraper(BaseScraper):
 
         resultados = []
 
-        # DuckDuckGo HTML results están en .result
         for result in soup.select(".result"):
             try:
-                # Extraer título y URL
                 link_el = result.select_one("a.result__a")
                 if not link_el:
                     continue
@@ -149,17 +130,14 @@ class WebScraper(BaseScraper):
                 titulo = limpiar_texto(link_el.get_text())
                 href = link_el.get("href", "")
 
-                # DuckDuckGo a veces usa redirects, extraer URL real
                 website = self._extraer_url_ddg(href)
                 if not website or not validar_url(website):
                     continue
 
-                # Filtrar resultados irrelevantes (redes sociales, wikis, etc.)
                 dominio = urlparse(website).netloc.lower()
                 if self._es_dominio_irrelevante(dominio):
                     continue
 
-                # Extraer snippet/descripción
                 snippet_el = result.select_one(".result__snippet")
                 snippet = limpiar_texto(snippet_el.get_text()) if snippet_el else ""
 
@@ -170,7 +148,6 @@ class WebScraper(BaseScraper):
                     "tipo_negocio": self._inferir_tipo_negocio(titulo + " " + snippet),
                 }
 
-                # Intentar extraer locación
                 loc = self._extraer_locacion_snippet(snippet)
                 if loc:
                     negocio.update(loc)
@@ -188,11 +165,9 @@ class WebScraper(BaseScraper):
         if not href:
             return None
 
-        # DuckDuckGo a veces pone la URL directa
         if href.startswith("http") and "duckduckgo.com" not in href:
             return href
 
-        # Buscar parámetro uddg= en la URL de redirect
         match = re.search(r'uddg=([^&]+)', href)
         if match:
             from urllib.parse import unquote
@@ -206,8 +181,7 @@ class WebScraper(BaseScraper):
             "wikipedia.org", "youtube.com", "facebook.com", "instagram.com",
             "twitter.com", "x.com", "tiktok.com", "linkedin.com",
             "reddit.com", "pinterest.com", "amazon.com", "ebay.com",
-            "tripadvisor.com",  # Lo usamos como fuente pero no es un negocio
-            "yelp.com", "google.com", "maps.google.com",
+            "tripadvisor.com", "yelp.com", "google.com", "maps.google.com",
         ]
         return any(irr in dominio for irr in irrelevantes)
 
@@ -245,97 +219,6 @@ class WebScraper(BaseScraper):
 
         self._errores += 1
         return None
-
-    # =========================================================================
-    # Google Custom Search API
-    # =========================================================================
-
-    def _buscar_google(self, deporte: str, locacion: str,
-                       tipo_negocio: str = None, idioma: str = "en",
-                       max_resultados: int = 50) -> list[dict]:
-        """
-        Busca negocios usando Google Custom Search API.
-        Si la API da error 403 (no habilitada), deja de intentar.
-        """
-        resultados = []
-        urls_vistas = set()
-
-        templates = GOOGLE_SEARCH_TEMPLATES[:4]  # Limitar para no gastar cuota
-        if tipo_negocio and tipo_negocio in GOOGLE_MAPS_QUERIES:
-            templates = [GOOGLE_MAPS_QUERIES[tipo_negocio]] + templates[:2]
-
-        for template in templates:
-            if len(resultados) >= max_resultados or not self._google_api_funciona:
-                break
-
-            query = template.format(deporte=deporte, locacion=locacion)
-            nuevos = self._google_custom_search(query, idioma)
-
-            for item in nuevos:
-                url = item.get("website", "")
-                if url and url not in urls_vistas:
-                    urls_vistas.add(url)
-                    item["deporte"] = deporte
-                    item["fuente"] = "google_search"
-                    if tipo_negocio:
-                        item["tipo_negocio"] = tipo_negocio
-                    resultados.append(item)
-
-        return resultados
-
-    def _google_custom_search(self, query: str, idioma: str = "en") -> list[dict]:
-        """Ejecuta una búsqueda en Google Custom Search API."""
-        from utils.rate_limiter import rate_limiter
-
-        url = "https://www.googleapis.com/customsearch/v1"
-        params = {
-            "key": GOOGLE_API_KEY,
-            "cx": GOOGLE_SEARCH_ENGINE_ID,
-            "q": query,
-            "num": 10,
-            "lr": f"lang_{idioma}",
-        }
-
-        try:
-            rate_limiter.esperar("googleapis.com")
-            resp = requests.get(url, params=params, timeout=15)
-
-            if resp.status_code == 403:
-                self.logger.warning(
-                    "Google Custom Search API no habilitada o sin cuota. "
-                    "Habilítala en: https://console.developers.google.com/apis/api/customsearch.googleapis.com "
-                    "Usando DuckDuckGo como alternativa."
-                )
-                self._google_api_funciona = False
-                return []
-
-            if resp.status_code != 200:
-                self.logger.warning(f"Google API respondió {resp.status_code}")
-                return []
-
-            items = resp.json().get("items", [])
-            resultados = []
-            for item in items:
-                negocio = {
-                    "nombre": item.get("title", "").strip(),
-                    "website": item.get("link", ""),
-                    "descripcion": truncar(item.get("snippet", ""), 500),
-                    "tipo_negocio": self._inferir_tipo_negocio(
-                        item.get("title", "") + " " + item.get("snippet", "")
-                    ),
-                }
-                loc = self._extraer_locacion_snippet(item.get("snippet", ""))
-                if loc:
-                    negocio.update(loc)
-                resultados.append(negocio)
-
-            self.logger.info(f"Google API: {len(resultados)} resultados para '{query}'")
-            return resultados
-
-        except Exception as e:
-            self.logger.error(f"Error en Google Custom Search: {e}")
-            self._errores += 1
-            return []
 
     # =========================================================================
     # Directorios especializados
@@ -485,7 +368,7 @@ class WebScraper(BaseScraper):
         return resultados
 
     def _parsear_generico(self, soup, deporte: str, fuente: str) -> list[dict]:
-        """Parser genérico para directorios no reconocidos."""
+        """Parser generico para directorios no reconocidos."""
         resultados = []
 
         selectores = [
@@ -526,7 +409,7 @@ class WebScraper(BaseScraper):
                 }
                 resultados.append(negocio)
             except Exception as e:
-                self.logger.debug(f"Error en parser genérico: {e}")
+                self.logger.debug(f"Error en parser generico: {e}")
 
         return resultados
 
@@ -536,7 +419,7 @@ class WebScraper(BaseScraper):
 
     def _generar_queries(self, deporte: str, locacion: str,
                         tipo_negocio: str = None) -> list[str]:
-        """Genera queries de búsqueda optimizadas."""
+        """Genera queries de busqueda optimizadas."""
         queries = []
 
         if tipo_negocio:
@@ -576,7 +459,7 @@ class WebScraper(BaseScraper):
         return "escuela"
 
     def _extraer_locacion_snippet(self, snippet: str) -> dict | None:
-        """Intenta extraer país/ciudad del snippet."""
+        """Intenta extraer pais/ciudad del snippet."""
         if not snippet:
             return None
         match = re.search(

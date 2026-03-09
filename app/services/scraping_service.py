@@ -34,17 +34,14 @@ class ScrapingService:
         resultados_web = web.run(deporte, locacion, tipo_negocio=tipo_negocio,
                                  max_resultados=max_resultados, idioma=idioma)
 
-        if web._google_api_funciona and (
-            __import__('config.settings', fromlist=['GOOGLE_API_KEY']).GOOGLE_API_KEY
-        ):
-            fuentes.append("google")
         fuentes.append("duckduckgo")
         fuentes.append("directorios")
 
         if web._errores > 0:
             errores.append(f"web_scraper: {web._errores} errores")
 
-        negocios = self._leer_negocios(deporte, locacion, tipo_negocio, max_resultados)
+        negocios = self._leer_negocios(deporte, locacion, tipo_negocio,
+                                        max_resultados, simplificado=True)
 
         return {
             "summary": {
@@ -96,7 +93,9 @@ class ScrapingService:
         except Exception as e:
             errores.append(f"social_scraper: {str(e)}")
 
-        negocios = self._leer_negocios(deporte, locacion, max_resultados=max_resultados)
+        negocios = self._leer_negocios(deporte, locacion,
+                                        max_resultados=max_resultados,
+                                        simplificado=True)
 
         return {
             "summary": {
@@ -119,7 +118,9 @@ class ScrapingService:
         if trips._errores > 0:
             errores.append(f"trips_scraper: {trips._errores} errores")
 
-        negocios = self._leer_negocios(deporte, locacion, max_resultados=max_resultados)
+        negocios = self._leer_negocios(deporte, locacion,
+                                        max_resultados=max_resultados,
+                                        simplificado=True)
 
         return {
             "summary": {
@@ -165,7 +166,8 @@ class ScrapingService:
 
     def _leer_negocios(self, deporte: str, locacion: str,
                        tipo_negocio: str = None,
-                       max_resultados: int = 50) -> list[dict]:
+                       max_resultados: int = 50,
+                       simplificado: bool = False) -> list[dict]:
         """Lee negocios de la DB y los devuelve como diccionarios."""
         with get_session() as session:
             query = session.query(Negocio).filter(Negocio.deporte == deporte)
@@ -180,7 +182,24 @@ class ScrapingService:
                 query = query.filter(Negocio.tipo_negocio == tipo_negocio)
 
             negocios = query.order_by(Negocio.created_at.desc()).limit(max_resultados).all()
+
+            if simplificado:
+                return [self._negocio_simple(n) for n in negocios]
             return [n.to_dict() for n in negocios]
+
+    def _negocio_simple(self, n: Negocio) -> dict:
+        """Serializa un negocio con solo los campos utiles para busqueda."""
+        return {
+            "nombre": n.nombre,
+            "tipo_negocio": n.tipo_negocio,
+            "deporte": n.deporte,
+            "locacion": n.region or n.pais or n.ciudad or "",
+            "website": n.website,
+            "emails": n.emails or [],
+            "telefonos": n.telefonos or [],
+            "redes_sociales": n.redes_sociales or {},
+            "fuente": n.fuente,
+        }
 
     def _negocio_to_export(self, n: Negocio) -> dict:
         """Convierte un negocio a formato de exportacion plano."""
