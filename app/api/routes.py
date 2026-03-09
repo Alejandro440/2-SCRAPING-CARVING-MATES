@@ -79,14 +79,16 @@ def validar_search_input(data: dict) -> str | None:
 @require_api_key
 def search():
     """
-    Ejecuta el pipeline de scraping completo.
+    Busqueda principal multi-fuente (Google + DuckDuckGo + directorios).
+    Solo busca negocios. No ejecuta enriquecimiento (emails/phones/social).
+    Responde en ~20-40 segundos.
 
     Body JSON:
         deporte (str, obligatorio): "surf", "yoga", "kitesurf", etc.
         locacion (str, obligatorio): "Bali", "Costa Rica", "Portugal", etc.
         tipo_negocio (str, opcional): "escuela", "camp", "retreat", etc.
-        max_resultados (int, opcional): máximo de resultados (default 50)
-        idioma (str, opcional): idioma de búsqueda (default "en")
+        max_resultados (int, opcional): maximo de resultados (default 50)
+        idioma (str, opcional): idioma de busqueda (default "en")
 
     Returns:
         JSON con status, summary y resultados.
@@ -115,13 +117,59 @@ def search():
 
         return jsonify({
             "status": "success",
-            "message": "Scraping completado correctamente",
+            "message": "Busqueda completada correctamente",
             "input": {
                 "deporte": deporte,
                 "locacion": locacion,
                 "tipo_negocio": tipo_negocio,
                 "max_resultados": max_resultados,
                 "idioma": idioma,
+            },
+            "summary": resultado["summary"],
+            "resultados": resultado["resultados"],
+        })
+
+    except Exception as e:
+        return error_response(f"Error interno: {str(e)}", 500)
+
+
+@api_bp.route("/scraping/enrich", methods=["POST"])
+@require_api_key
+def enrich():
+    """
+    Enriquece negocios ya encontrados con emails, telefonos y redes sociales.
+    Ejecuta los pipelines de email + phone + social sobre negocios en la DB.
+    Proceso lento (~1-2 min). Llamar despues de /search.
+
+    Body JSON:
+        deporte (str, obligatorio)
+        locacion (str, obligatorio)
+        max_resultados (int, opcional, default 50)
+    """
+    data = request.get_json(silent=True) or {}
+
+    error = validar_search_input(data)
+    if error:
+        return error_response(error)
+
+    deporte = data["deporte"].strip().lower()
+    locacion = data["locacion"].strip()
+    max_resultados = int(data.get("max_resultados", 50))
+
+    try:
+        resultado = scraping_service.enriquecer(
+            deporte=deporte,
+            locacion=locacion,
+            max_resultados=max_resultados,
+        )
+
+        return jsonify({
+            "status": "success",
+            "message": "Enriquecimiento completado",
+            "input": {
+                "deporte": deporte,
+                "locacion": locacion,
+                "max_resultados": max_resultados,
             },
             "summary": resultado["summary"],
             "resultados": resultado["resultados"],

@@ -70,9 +70,9 @@ class BaseScraper(ABC):
                     continue
 
                 if response.status_code == 403:
-                    self.logger.warning(f"Acceso denegado (403) en {url}")
-                    rate_limiter.registrar_error(dominio)
-                    continue
+                    self.logger.warning(f"Acceso denegado (403) en {url} — no reintentando")
+                    self._errores += 1
+                    return None
 
                 if response.status_code == 503:
                     self.logger.warning(f"Servicio no disponible (503) en {url}")

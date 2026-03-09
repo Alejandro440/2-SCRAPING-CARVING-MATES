@@ -1,6 +1,6 @@
 """
 Capa de servicio que orquesta los scrapers.
-Encapsula toda la lógica de negocio que antes vivía en main.py.
+Separa la busqueda principal (rapida) del enriquecimiento (lento).
 """
 
 from database.connection import get_session
@@ -19,25 +19,24 @@ class ScrapingService:
     def buscar(self, deporte: str, locacion: str, tipo_negocio: str = None,
                max_resultados: int = 50, idioma: str = "en") -> dict:
         """
-        Pipeline completo: web → email → phone → social.
+        Busqueda principal: solo WebScraper (Google + DuckDuckGo + directorios).
+        Responde rapido (~20-40s). No ejecuta email/phone/social.
 
         Returns:
             Dict con "summary" y "resultados".
         """
         from scrapers.web_scraper import WebScraper
-        from scrapers.email_scraper import EmailScraper
-        from scrapers.phone_scraper import PhoneScraper
-        from scrapers.social_scraper import SocialScraper
 
         errores = []
         fuentes = []
 
-        # 1. Buscar negocios
         web = WebScraper()
         resultados_web = web.run(deporte, locacion, tipo_negocio=tipo_negocio,
                                  max_resultados=max_resultados, idioma=idioma)
 
-        if web._google_api_funciona:
+        if web._google_api_funciona and (
+            __import__('config.settings', fromlist=['GOOGLE_API_KEY']).GOOGLE_API_KEY
+        ):
             fuentes.append("google")
         fuentes.append("duckduckgo")
         fuentes.append("directorios")
@@ -45,28 +44,6 @@ class ScrapingService:
         if web._errores > 0:
             errores.append(f"web_scraper: {web._errores} errores")
 
-        # 2. Extraer emails
-        try:
-            email_scraper = EmailScraper()
-            email_scraper.run(deporte, locacion)
-        except Exception as e:
-            errores.append(f"email_scraper: {str(e)}")
-
-        # 3. Extraer teléfonos
-        try:
-            phone_scraper = PhoneScraper()
-            phone_scraper.run(deporte, locacion)
-        except Exception as e:
-            errores.append(f"phone_scraper: {str(e)}")
-
-        # 4. Extraer redes sociales
-        try:
-            social_scraper = SocialScraper()
-            social_scraper.run(deporte, locacion)
-        except Exception as e:
-            errores.append(f"social_scraper: {str(e)}")
-
-        # 5. Leer resultados actualizados de la DB
         negocios = self._leer_negocios(deporte, locacion, tipo_negocio, max_resultados)
 
         return {
@@ -79,9 +56,60 @@ class ScrapingService:
             "resultados": negocios,
         }
 
+    def enriquecer(self, deporte: str, locacion: str,
+                   max_resultados: int = 50) -> dict:
+        """
+        Enriquecimiento: ejecuta email + phone + social sobre negocios ya en la DB.
+        Este proceso es lento (~1-2 min) y se llama por separado.
+
+        Returns:
+            Dict con "summary" y "resultados".
+        """
+        from scrapers.email_scraper import EmailScraper
+        from scrapers.phone_scraper import PhoneScraper
+        from scrapers.social_scraper import SocialScraper
+
+        errores = []
+        pipelines_ejecutados = []
+
+        # Emails
+        try:
+            email_scraper = EmailScraper()
+            email_scraper.run(deporte, locacion)
+            pipelines_ejecutados.append("email")
+        except Exception as e:
+            errores.append(f"email_scraper: {str(e)}")
+
+        # Telefonos
+        try:
+            phone_scraper = PhoneScraper()
+            phone_scraper.run(deporte, locacion)
+            pipelines_ejecutados.append("phone")
+        except Exception as e:
+            errores.append(f"phone_scraper: {str(e)}")
+
+        # Redes sociales
+        try:
+            social_scraper = SocialScraper()
+            social_scraper.run(deporte, locacion)
+            pipelines_ejecutados.append("social")
+        except Exception as e:
+            errores.append(f"social_scraper: {str(e)}")
+
+        negocios = self._leer_negocios(deporte, locacion, max_resultados=max_resultados)
+
+        return {
+            "summary": {
+                "total_resultados": len(negocios),
+                "pipelines_ejecutados": pipelines_ejecutados,
+                "errores": errores,
+            },
+            "resultados": negocios,
+        }
+
     def buscar_trips(self, deporte: str, locacion: str,
                      max_resultados: int = 30) -> dict:
-        """Pipeline específico para trips y retreats."""
+        """Pipeline especifico para trips y retreats."""
         from scrapers.trips_scraper import TripsScraper
 
         errores = []
@@ -122,7 +150,7 @@ class ScrapingService:
     def contactar(self, deporte: str = None, locacion: str = None,
                   template: str = "escuela_inicial",
                   max_envios: int = 50, dry_run: bool = True) -> dict:
-        """Envía emails a negocios pendientes."""
+        """Envia emails a negocios pendientes."""
         from automation.email_sender import EmailSender
 
         sender = EmailSender()
@@ -155,7 +183,7 @@ class ScrapingService:
             return [n.to_dict() for n in negocios]
 
     def _negocio_to_export(self, n: Negocio) -> dict:
-        """Convierte un negocio a formato de exportación plano."""
+        """Convierte un negocio a formato de exportacion plano."""
         redes = n.redes_sociales or {}
         return {
             "nombre": n.nombre,
