@@ -1,7 +1,8 @@
 """
 Pipeline 1: Scraper de Paginas Web.
-Busca negocios (escuelas, shops, retreats) por deporte y locacion.
+Busca negocios reales (escuelas, shops, retreats) por deporte y locacion.
 Fuentes abiertas: DuckDuckGo HTML (sin API key) + directorios especializados.
+Filtra contenido editorial (blogs, rankings, guias) para priorizar negocios contactables.
 """
 
 import re
@@ -10,42 +11,32 @@ from urllib.parse import quote_plus, urljoin, urlparse
 import requests
 
 from scrapers.base_scraper import BaseScraper
-from config.sources import DIRECTORIOS
+from config.sources import (
+    DIRECTORIOS, SUB_LOCACIONES, DOMINIOS_EDITORIALES, PATRONES_EDITORIAL,
+)
 from utils.helpers import limpiar_texto, truncar
 from utils.validators import validar_url, normalizar_url
 
 
 class WebScraper(BaseScraper):
     """
-    Busca negocios en la web por deporte y locacion.
+    Busca negocios reales en la web por deporte y locacion.
     Estrategia: DuckDuckGo (principal) + directorios especializados.
-    No requiere API keys. Totalmente open source.
+    Filtra agresivamente contenido editorial para priorizar negocios contactables.
+    No requiere API keys.
     """
 
     def __init__(self):
         super().__init__("web")
 
     def ejecutar(self, deporte: str, locacion: str, **kwargs) -> list[dict]:
-        """
-        Ejecuta la busqueda de negocios.
-
-        Args:
-            deporte: Deporte a buscar (ej: "surf").
-            locacion: Locacion a buscar (ej: "Bali").
-            tipo_negocio: Filtro opcional por tipo (ej: "escuela").
-            max_resultados: Maximo de resultados totales.
-            idioma: Idioma de busqueda ("en", "es", etc.).
-
-        Returns:
-            Lista de negocios encontrados como diccionarios.
-        """
         tipo_negocio = kwargs.get("tipo_negocio")
         max_resultados = kwargs.get("max_resultados", 50)
 
         resultados = []
         urls_vistas = set()
 
-        # 1. DuckDuckGo como fuente principal (sin API key, siempre disponible)
+        # 1. DuckDuckGo: busqueda principal + sub-localizaciones
         self.logger.info("Buscando en DuckDuckGo...")
         resultados_ddg = self._buscar_duckduckgo(
             deporte, locacion, tipo_negocio, max_resultados
@@ -56,7 +47,7 @@ class WebScraper(BaseScraper):
                 urls_vistas.add(url)
                 resultados.append(r)
 
-        # 2. Buscar en directorios especializados
+        # 2. Directorios especializados
         self.logger.info("Buscando en directorios especializados...")
         resultados_directorios = self._buscar_directorios(deporte, locacion, tipo_negocio)
         for r in resultados_directorios:
@@ -72,16 +63,13 @@ class WebScraper(BaseScraper):
         return resultados[:max_resultados]
 
     # =========================================================================
-    # DuckDuckGo Search (sin API key, siempre disponible)
+    # DuckDuckGo Search
     # =========================================================================
 
     def _buscar_duckduckgo(self, deporte: str, locacion: str,
                            tipo_negocio: str = None,
                            max_resultados: int = 30) -> list[dict]:
-        """
-        Busca negocios en DuckDuckGo HTML.
-        No requiere API key y no tiene limites estrictos.
-        """
+        """Busca negocios en DuckDuckGo HTML con queries granulares."""
         resultados = []
 
         queries = self._generar_queries(deporte, locacion, tipo_negocio)
@@ -101,13 +89,11 @@ class WebScraper(BaseScraper):
                 item.setdefault("region", locacion)
                 resultados.append(item)
 
-        self.logger.info(f"DuckDuckGo: {len(resultados)} resultados totales")
+        self.logger.info(f"DuckDuckGo: {len(resultados)} negocios reales encontrados")
         return resultados
 
     def _duckduckgo_search(self, query: str) -> list[dict]:
-        """
-        Ejecuta una busqueda en DuckDuckGo HTML y parsea los resultados.
-        """
+        """Ejecuta busqueda en DuckDuckGo HTML, filtra editorial."""
         url = "https://html.duckduckgo.com/html/"
         data = {"q": query, "b": ""}
 
@@ -135,11 +121,23 @@ class WebScraper(BaseScraper):
                     continue
 
                 dominio = urlparse(website).netloc.lower()
+
+                # Filtrar dominios irrelevantes (redes sociales, wikis)
                 if self._es_dominio_irrelevante(dominio):
+                    continue
+
+                # Filtrar dominios editoriales (blogs, medios, OTAs)
+                if self._es_dominio_editorial(dominio):
+                    self.logger.debug(f"Filtrado editorial: {dominio}")
                     continue
 
                 snippet_el = result.select_one(".result__snippet")
                 snippet = limpiar_texto(snippet_el.get_text()) if snippet_el else ""
+
+                # Filtrar titulos editoriales
+                if self._es_titulo_editorial(titulo):
+                    self.logger.debug(f"Filtrado titulo editorial: {titulo[:60]}")
+                    continue
 
                 negocio = {
                     "nombre": titulo,
@@ -164,32 +162,36 @@ class WebScraper(BaseScraper):
         """Extrae la URL real de un redirect de DuckDuckGo."""
         if not href:
             return None
-
         if href.startswith("http") and "duckduckgo.com" not in href:
             return href
-
         match = re.search(r'uddg=([^&]+)', href)
         if match:
             from urllib.parse import unquote
             return unquote(match.group(1))
-
         return None
 
     def _es_dominio_irrelevante(self, dominio: str) -> bool:
-        """Filtra dominios que no son negocios reales."""
+        """Filtra dominios que no son negocios (redes sociales, wikis, etc.)."""
         irrelevantes = [
             "wikipedia.org", "youtube.com", "facebook.com", "instagram.com",
             "twitter.com", "x.com", "tiktok.com", "linkedin.com",
             "reddit.com", "pinterest.com", "amazon.com", "ebay.com",
-            "tripadvisor.com", "yelp.com", "google.com", "maps.google.com",
+            "google.com", "maps.google.com",
         ]
         return any(irr in dominio for irr in irrelevantes)
 
+    def _es_dominio_editorial(self, dominio: str) -> bool:
+        """Filtra dominios editoriales (blogs, medios, OTAs, comparadores)."""
+        dominio_limpio = dominio.replace("www.", "")
+        return any(ed in dominio_limpio for ed in DOMINIOS_EDITORIALES)
+
+    def _es_titulo_editorial(self, titulo: str) -> bool:
+        """Detecta titulos que son articulos/rankings, no negocios."""
+        titulo_lower = titulo.lower()
+        return any(patron in titulo_lower for patron in PATRONES_EDITORIAL)
+
     def fetch_post(self, url: str, data: dict = None) -> requests.Response | None:
-        """
-        Hace un POST request (necesario para DuckDuckGo HTML).
-        Mismo rate limiting y retry que fetch().
-        """
+        """POST request con rate limiting y retry."""
         from config.settings import MAX_RETRIES, REQUEST_TIMEOUT
         from utils.helpers import get_headers
         from utils.rate_limiter import rate_limiter
@@ -267,7 +269,6 @@ class WebScraper(BaseScraper):
     def _parsear_booksurfcamps(self, soup, deporte: str, fuente: str) -> list[dict]:
         """Parsea resultados de BookSurfCamps."""
         resultados = []
-
         cards = soup.select("div.camp-card, article.camp-item, div.listing-card, a.camp-link")
         if not cards:
             cards = soup.select("a[href*='/surf-camp/'], a[href*='/surf-school/']")
@@ -328,7 +329,6 @@ class WebScraper(BaseScraper):
     def _parsear_bookretreats(self, soup, deporte: str, fuente: str) -> list[dict]:
         """Parsea resultados de BookYogaRetreats / BookRetreats."""
         resultados = []
-
         cards = soup.select(
             "div.retreat-card, article.retreat-item, div.listing-card, "
             "a[href*='/retreat/'], a[href*='/yoga-retreat/']"
@@ -370,7 +370,6 @@ class WebScraper(BaseScraper):
     def _parsear_generico(self, soup, deporte: str, fuente: str) -> list[dict]:
         """Parser generico para directorios no reconocidos."""
         resultados = []
-
         selectores = [
             "article", "div.card", "div.listing", "div.item",
             "div.result", "li.result", "div.business",
@@ -419,9 +418,14 @@ class WebScraper(BaseScraper):
 
     def _generar_queries(self, deporte: str, locacion: str,
                         tipo_negocio: str = None) -> list[str]:
-        """Genera queries de busqueda optimizadas."""
+        """
+        Genera queries de busqueda optimizadas.
+        Incluye busquedas por sub-localizaciones conocidas para mayor cobertura.
+        """
         queries = []
+        locacion_lower = locacion.lower()
 
+        # Queries principales por tipo o genericas
         if tipo_negocio:
             tipo_en = {
                 "escuela": "school", "alquiler": "rental", "retreat": "retreat",
@@ -429,19 +433,33 @@ class WebScraper(BaseScraper):
             }.get(tipo_negocio, tipo_negocio)
             queries.append(f"{deporte} {tipo_en} {locacion}")
             queries.append(f"best {deporte} {tipo_en} in {locacion}")
+            queries.append(f"{deporte} {tipo_en} near {locacion}")
         else:
             queries.append(f"{deporte} school {locacion}")
             queries.append(f"{deporte} lessons {locacion}")
             queries.append(f"{deporte} camp {locacion}")
-            queries.append(f"best {deporte} schools in {locacion}")
             queries.append(f"{deporte} rental {locacion}")
+            queries.append(f"{deporte} academy {locacion}")
+
+        # Queries por sub-localizaciones conocidas
+        sub_locs = SUB_LOCACIONES.get(locacion_lower, [])
+        if sub_locs:
+            for sub in sub_locs[:5]:  # Limitar a 5 sub-localizaciones
+                if tipo_negocio:
+                    tipo_en = {
+                        "escuela": "school", "alquiler": "rental", "retreat": "retreat",
+                        "trip": "trip", "camp": "camp", "shop": "shop",
+                    }.get(tipo_negocio, tipo_negocio)
+                    queries.append(f"{deporte} {tipo_en} {sub}")
+                else:
+                    queries.append(f"{deporte} school {sub}")
+                    queries.append(f"{deporte} lessons {sub}")
 
         return queries
 
     def _inferir_tipo_negocio(self, texto: str) -> str:
         """Infiere el tipo de negocio a partir del texto."""
         texto = texto.lower()
-
         tipos_keywords = {
             "retreat": ["retreat", "retiro"],
             "camp": ["camp", "campamento"],
@@ -450,12 +468,10 @@ class WebScraper(BaseScraper):
             "alquiler": ["rental", "alquiler", "hire", "rent"],
             "shop": ["shop", "store", "tienda", "outlet"],
         }
-
         for tipo, keywords in tipos_keywords.items():
             for keyword in keywords:
                 if keyword in texto:
                     return tipo
-
         return "escuela"
 
     def _extraer_locacion_snippet(self, snippet: str) -> dict | None:

@@ -10,19 +10,7 @@ from scrapers.base_scraper import BaseScraper
 from database.connection import get_session
 from database.models import Negocio
 from utils.validators import extraer_emails_de_texto, validar_url
-from config.sources import CONTACT_PATHS
-
-# Dominios que son artículos/blogs/listas, no negocios contactables
-DOMINIOS_NO_NEGOCIO = [
-    "thesmartlocal.com", "theworldbucketlist.com", "theculturetrip.com",
-    "lonelyplanet.com", "tripadvisor.com", "timeout.com",
-    "nomadicmatt.com", "travelandleisure.com", "cntraveler.com",
-    "hostelworld.com", "booking.com", "expedia.com",
-    "medium.com", "reddit.com", "quora.com",
-    "secretseaweed.com", "thesurfatlas.com", "magicseaweed.com",
-    "surfline.com", "wannasurf.com",
-    "wikipedia.org", "wikivoyage.org",
-]
+from config.sources import CONTACT_PATHS, DOMINIOS_EDITORIALES
 
 
 class EmailScraper(BaseScraper):
@@ -82,7 +70,7 @@ class EmailScraper(BaseScraper):
         path = urlparse(url).path.lower()
 
         # Dominio conocido como no-negocio
-        for d in DOMINIOS_NO_NEGOCIO:
+        for d in DOMINIOS_EDITORIALES:
             if d in dominio:
                 return True
 

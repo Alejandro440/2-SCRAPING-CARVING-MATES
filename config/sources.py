@@ -1,7 +1,7 @@
 """
 Fuentes de scraping organizadas por tipo.
 Cada fuente tiene un nombre, URL base, y los deportes/tipos que soporta.
-Fácilmente extensible: solo agregar nuevas entradas al diccionario.
+Facilmente extensible: solo agregar nuevas entradas al diccionario.
 """
 
 # Directorios especializados por deporte
@@ -16,7 +16,7 @@ DIRECTORIOS = {
         {
             "nombre": "Surfline",
             "url_base": "https://www.surfline.com",
-            "url_busqueda": None,  # Requiere scraping más específico
+            "url_busqueda": None,
             "tipos": ["escuela"],
         },
     ],
@@ -44,7 +44,72 @@ DIRECTORIOS = {
     ],
 }
 
-# Páginas internas donde buscar datos de contacto
+# Sub-localizaciones conocidas para busquedas mas granulares
+# Permite buscar por ciudades/regiones/spots ademas de por pais
+SUB_LOCACIONES = {
+    "portugal": ["Ericeira", "Peniche", "Cascais", "Algarve", "Nazare", "Porto", "Sagres"],
+    "spain": ["Cantabria", "Asturias", "Pais Vasco", "Galicia", "Cadiz", "Canarias", "Tenerife", "Fuerteventura", "Lanzarote"],
+    "españa": ["Cantabria", "Asturias", "Pais Vasco", "Galicia", "Cadiz", "Canarias", "Tenerife", "Fuerteventura", "Lanzarote"],
+    "costa rica": ["Tamarindo", "Santa Teresa", "Nosara", "Jaco", "Dominical", "Pavones"],
+    "indonesia": ["Bali", "Lombok", "Mentawai", "Sumatra", "Sumbawa"],
+    "bali": ["Canggu", "Kuta", "Seminyak", "Uluwatu", "Sanur", "Medewi"],
+    "australia": ["Gold Coast", "Byron Bay", "Sydney", "Torquay", "Margaret River", "Noosa"],
+    "france": ["Biarritz", "Hossegor", "Lacanau", "Capbreton", "Anglet"],
+    "francia": ["Biarritz", "Hossegor", "Lacanau", "Capbreton", "Anglet"],
+    "morocco": ["Taghazout", "Essaouira", "Imsouane", "Tamraght", "Agadir"],
+    "marruecos": ["Taghazout", "Essaouira", "Imsouane", "Tamraght", "Agadir"],
+    "mexico": ["Puerto Escondido", "Sayulita", "Punta de Mita", "Todos Santos", "Baja California"],
+    "méxico": ["Puerto Escondido", "Sayulita", "Punta de Mita", "Todos Santos", "Baja California"],
+    "sri lanka": ["Arugam Bay", "Weligama", "Mirissa", "Hikkaduwa", "Ahangama"],
+    "south africa": ["Jeffreys Bay", "Muizenberg", "Durban", "Cape Town"],
+    "brazil": ["Florianopolis", "Itacare", "Fernando de Noronha", "Ubatuba"],
+    "brasil": ["Florianopolis", "Itacare", "Fernando de Noronha", "Ubatuba"],
+    "hawaii": ["Oahu", "Maui", "North Shore", "Waikiki"],
+    "california": ["San Diego", "Santa Cruz", "Malibu", "Huntington Beach", "San Francisco"],
+    "uk": ["Cornwall", "Devon", "Pembrokeshire", "Newquay", "Croyde"],
+    "italy": ["Sardinia", "Sicily", "Levanto", "Cagliari"],
+    "italia": ["Sardinia", "Sicily", "Levanto", "Cagliari"],
+}
+
+# Dominios editoriales que NO son negocios reales
+# Usados para filtrar resultados de busqueda
+DOMINIOS_EDITORIALES = [
+    # Medios de viaje
+    "lonelyplanet.com", "tripadvisor.com", "timeout.com",
+    "travelandleisure.com", "cntraveler.com", "theculturetrip.com",
+    "nomadicmatt.com", "theworldbucketlist.com", "thesmartlocal.com",
+    "matadornetwork.com", "roughguides.com", "fodors.com",
+    "wanderlust.co.uk", "nationalgeographic.com",
+    # Booking / OTAs
+    "booking.com", "expedia.com", "hostelworld.com", "hotels.com",
+    "airbnb.com", "kayak.com", "skyscanner.com",
+    # Surf media / editorial
+    "surfline.com", "magicseaweed.com", "surfertoday.com",
+    "theinertia.com", "surfersvillage.com", "wannasurf.com",
+    "secretseaweed.com", "thesurfatlas.com", "stabmag.com",
+    "surfermag.com", "surfer.com", "boardriders.com",
+    # Social / plataformas
+    "wikipedia.org", "wikivoyage.org", "reddit.com", "quora.com",
+    "medium.com", "youtube.com", "facebook.com", "instagram.com",
+    "twitter.com", "x.com", "tiktok.com", "linkedin.com",
+    "pinterest.com",
+    # E-commerce / marketplaces
+    "amazon.com", "ebay.com", "etsy.com",
+    # Listas / reviews
+    "yelp.com", "trustpilot.com", "glassdoor.com",
+]
+
+# Patrones en titulo/URL que indican contenido editorial, no negocio
+PATRONES_EDITORIAL = [
+    "best ", "top ", "guide ", " guide", "ultimate guide",
+    "things to do", "bucket list", "where to ",
+    "review of", "comparison", "vs ", " vs.",
+    "magazine", "blog", "news", "article",
+    "how to choose", "tips for", "what to know",
+    "travel guide", "complete guide", "insider guide",
+]
+
+# Paginas internas donde buscar datos de contacto
 CONTACT_PATHS = [
     "/contact",
     "/contacto",
@@ -54,6 +119,17 @@ CONTACT_PATHS = [
     "/sobre-nosotros",
     "/impressum",
     "/kontakt",
+    "/book",
+    "/booking",
+    "/book-now",
+    "/reservar",
+    "/surf-lessons",
+    "/lessons",
+    "/courses",
+    "/rentals",
+    "/camp",
+    "/retreat",
+    "/faq",
 ]
 
 # User-Agents rotativos (se complementan con fake-useragent)
