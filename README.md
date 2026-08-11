@@ -1,396 +1,61 @@
-# Surf Scraper System
+# VWCE Quant Desk
 
-API open source de scraping por `deporte` + `locacion` para [Carving Mates](https://www.carvingmates.com). Busca negocios (escuelas de surf, yoga retreats, camps, shops) combinando multiples fuentes publicas. No depende de Google ni de ninguna API propietaria.
+Sistema de análisis **diario y automático** del ETF **VWCE** (Vanguard FTSE All-World UCITS ETF, IE00BK5BQT80, Xetra), orientado a optimizar un plan de aportaciones periódicas (**DCA de 500 € cada 14 días**).
 
-## Endpoints
+**➡️ El informe del día está siempre en [`reports/latest.md`](reports/latest.md).** Cada día queda archivado en `reports/<año>/`.
 
-**Base URL:** `http://localhost:5001`
+## Qué hace cada día
 
-| Metodo | Ruta | Tiempo | Descripcion |
-|--------|------|--------|-------------|
-| `GET` | `/` | instant | Health check |
-| `POST` | `/api/scraping/search` | ~30s | **Busqueda principal** (DuckDuckGo + directorios) |
-| `POST` | `/api/scraping/enrich` | ~2min | Enriquecer con emails, telefonos, redes sociales |
-| `POST` | `/api/scraping/trips` | ~30s | Buscar trips y retreats |
-| `GET` | `/api/stats` | instant | Estadisticas de la base de datos |
-| `POST` | `/api/scraping/export` | instant | Exportar datos (JSON o CSV) |
-| `POST` | `/api/contact/email` | variable | Enviar emails a negocios |
+Un workflow de GitHub Actions (`.github/workflows/daily-analysis.yml`) corre de lunes a viernes a las **07:30 (hora española)**, antes de la apertura de Xetra, y publica un informe con:
 
-### Endpoint principal
+1. **Nota de entrada (0–100)** — modelo compuesto de reversión a la media al estilo de un desk sistemático: caída desde máximos, RSI(14), distancia a la SMA200, Bollinger %B, z-score 60d y percentil del VIX. Más alta = punto de entrada más favorable *en términos relativos a su propia historia*.
+2. **Cuadro técnico completo** — medias 50/200, MACD, Bollinger, ATR, volatilidad, rango 52 semanas, régimen de tendencia.
+3. **Contexto macro/fundamental** — VIX, EURUSD (clave: el subyacente es USD y tú compras en EUR), tipos EEUU a 10 años, canal de tendencia de largo plazo y descomposición de la rentabilidad EUR = índice USD + divisa. Ficha del fondo (TER 0,22 %, ~3.900 empresas, acumulación).
+4. **Tu posición** — valor, P&L latente y cómo movería tu precio medio la aportación de hoy (se configura en `config.json`).
+5. **Backtest de estrategias de entrada quincenal** sobre tres históricos (VWCE desde 2019, VWRL.AS desde 2012 y VT desde 2008, que incluye la crisis financiera): comprar el primer día vs esperar caídas, RSI, la regla de la nota, y el *oráculo* (mejor día posible) como techo teórico.
+6. **Simulación Monte Carlo** — 2.000 escenarios a 5 años del plan de 500 €/quincena (bootstrap por bloques de rendimientos históricos), con percentiles de valor final y TIR.
+
+## La conclusión que ya sale de los backtests (y conviene tener presente)
+
+En un activo con deriva alcista como un indexado mundial, **elegir el día dentro de la ventana quincenal mueve muy poco el resultado** (el techo teórico con información perfecta ronda ~150–230 pb en precio medio, y las reglas realistas capturan una fracción pequeña, a veces negativa). La regla práctica que el informe aplica:
+
+- Si toca aportar, **aporta — no esperes "la caída"**: retrasar sistemáticamente sale caro.
+- La nota sirve para **adelantar** la entrada cuando hay señal fuerte (≥ 80: caídas con miedo en el mercado), no para saltarse compras.
+
+## Estructura
 
 ```
-POST http://localhost:5001/api/scraping/search
-Content-Type: application/json
-
-{"deporte": "surf", "locacion": "Bali"}
+config.json        ← tu plan: importe, intervalo, umbrales, posición actual
+run_daily.py       ← orquestador (python run_daily.py)
+src/
+  data.py          ← descarga Yahoo Finance + caché en data/cache/
+  indicators.py    ← RSI, MACD, Bollinger, ATR, drawdown, z-score…
+  signals.py       ← nota de entrada 0-100 y recomendación
+  context.py       ← VIX, EURUSD, tipos, canal de tendencia, descomposición FX
+  backtest.py      ← estrategias quincenales, oráculo, cash-carry, Monte Carlo
+  report.py        ← informe Markdown + gráficos PNG
+reports/           ← latest.md + archivo por año + img/
+data/              ← caché de precios y score_history.csv (serie diaria de la nota)
 ```
 
-```json
-{
-  "status": "success",
-  "message": "Busqueda completada correctamente",
-  "input": {"deporte": "surf", "locacion": "Bali"},
-  "summary": {
-    "total_resultados": 40,
-    "fuentes_utilizadas": ["duckduckgo", "directorios"],
-    "errores": []
-  },
-  "resultados": [
-    {
-      "nombre": "Odysseys Surf School",
-      "tipo_negocio": "escuela",
-      "deporte": "surf",
-      "locacion": "Bali",
-      "website": "https://odysseysurfschool.com",
-      "emails": [],
-      "telefonos": [],
-      "redes_sociales": {},
-      "fuente": "duckduckgo"
-    }
-  ]
-}
-```
+## Configurar tu plan
 
----
+Edita `config.json`:
 
-## Quick Start
+- `dca.amount_eur` / `dca.interval_days` — tu plan de aportación.
+- `dca.last_entry_date` — pon la fecha (`"2026-08-04"`) de tu última compra y el informe te dirá en qué día de la ventana estás y cuándo vence.
+- `position.shares` / `position.avg_cost_eur` — tu posición, para el P&L diario.
+- Umbrales de la nota: `score_buy_threshold` (65) y `score_strong_threshold` (80).
+
+## Ejecutar en local
 
 ```bash
-git clone https://github.com/Alejandro440/2-SCRAPING-CARVING-MATES.git
-cd surf-scraper-system
 pip install -r requirements.txt
-cp .env.example .env
-python main.py
+python run_daily.py   # escribe reports/latest.md
 ```
 
-En otra terminal:
-
-```bash
-# Health check
-curl http://localhost:5001/
-
-# Buscar negocios (~30s)
-curl -X POST http://localhost:5001/api/scraping/search \
-  -H "Content-Type: application/json" \
-  -d '{"deporte": "surf", "locacion": "Bali"}'
-```
-
-No necesitas API keys para buscar. El sistema usa fuentes publicas abiertas.
-
----
-
-## Arquitectura
-
-```
-POST /api/scraping/search  {"deporte": "surf", "locacion": "Bali"}
-         |
-         v
-   app/api/routes.py            Valida input, enruta al servicio
-         |
-         v
-   app/services/scraping_service.py    Orquesta el pipeline
-         |
-         v
-   scrapers/web_scraper.py      Busca en DuckDuckGo + directorios
-         |                       Si una fuente falla, sigue con las demas
-         v
-   database/models.py           Guarda en SQLite (dedup por dominio o nombre+pais)
-         |
-         v
-   Response JSON                Devuelve resultados simplificados
-```
-
-**Principios:**
-- **Open source:** No depende de Google API ni de ninguna API propietaria. Solo fuentes publicas.
-- **Multi-fuente:** DuckDuckGo HTML + directorios especializados. Si una fuente falla, las demas siguen.
-- **Busqueda separada de enriquecimiento:** `/search` responde rapido (~30s). `/enrich` anade emails/phones/social (opcional, ~2min).
-- **Sin reintentos en 403:** Si un dominio bloquea, se sigue adelante inmediatamente.
-- **JSON simplificado:** Solo campos utiles (nombre, tipo, deporte, locacion, website, contacto, fuente).
-
-| Capa | Archivos | Responsabilidad |
-|---|---|---|
-| Entry point | `main.py` | Arranca Flask en puerto 5001 |
-| Routing | `app/api/routes.py` | 7 endpoints, validacion, autenticacion |
-| Servicio | `app/services/scraping_service.py` | Orquesta pipelines, lee resultados de DB |
-| Scrapers | `scrapers/*.py` | 5 pipelines independientes |
-| Modelos | `database/models.py` | `Negocio`, `LogScraping`, `LogContacto` |
-| Config | `config/settings.py` | Carga `.env`, constantes |
-| Utilidades | `utils/*.py` | Logger, validadores, rate limiter |
-| Contacto | `automation/*.py` | Email (SMTP/SendGrid) y WhatsApp (Twilio) |
-
----
-
-## API Reference
-
-Todos los POST requieren `Content-Type: application/json`. Si `API_KEY_ENABLED=true` en `.env`, todas las peticiones necesitan `X-API-KEY: tu_clave`.
-
----
-
-### `POST /api/scraping/search`
-
-Busqueda principal. Combina DuckDuckGo + directorios. Responde en ~30s.
-
-**Body JSON:**
-
-| Campo | Tipo | Obligatorio | Default |
-|---|---|---|---|
-| `deporte` | string | si | — |
-| `locacion` | string | si | — |
-| `tipo_negocio` | string | no | `null` |
-| `max_resultados` | int | no | `50` |
-| `idioma` | string | no | `"en"` |
-
-Deportes: `"surf"`, `"yoga"`, `"kitesurf"`, `"snowboard"`, `"bodyboard"`, `"ski"`, `"windsurf"`, `"wakeboard"`, `"paddlesurf"`, `"kayak"`, `"skate"`.
-
-Tipos de negocio: `"escuela"`, `"alquiler"`, `"retreat"`, `"trip"`, `"camp"`, `"shop"`.
-
-**curl:**
-```bash
-curl -X POST http://localhost:5001/api/scraping/search \
-  -H "Content-Type: application/json" \
-  -d '{"deporte": "surf", "locacion": "Bali"}'
-```
-
-**Postman:** POST → `http://localhost:5001/api/scraping/search` → Body raw JSON → `{"deporte": "surf", "locacion": "Bali"}`
-
-**Response 200:**
-```json
-{
-  "status": "success",
-  "message": "Busqueda completada correctamente",
-  "input": {
-    "deporte": "surf",
-    "locacion": "Bali"
-  },
-  "summary": {
-    "total_resultados": 40,
-    "negocios_encontrados_web": 50,
-    "fuentes_utilizadas": ["duckduckgo", "directorios"],
-    "errores": []
-  },
-  "resultados": [
-    {
-      "nombre": "Odysseys Surf School",
-      "tipo_negocio": "escuela",
-      "deporte": "surf",
-      "locacion": "Bali",
-      "website": "https://odysseysurfschool.com",
-      "emails": [],
-      "telefonos": [],
-      "redes_sociales": {},
-      "fuente": "duckduckgo"
-    }
-  ]
-}
-```
-
----
-
-### `POST /api/scraping/enrich`
-
-Enriquece negocios ya encontrados con emails, telefonos y redes sociales. Llamar despues de `/search`. Tarda ~1-2 min.
-
-**Body JSON:**
-
-| Campo | Tipo | Obligatorio | Default |
-|---|---|---|---|
-| `deporte` | string | si | — |
-| `locacion` | string | si | — |
-| `max_resultados` | int | no | `50` |
-
-**curl:**
-```bash
-curl -X POST http://localhost:5001/api/scraping/enrich \
-  -H "Content-Type: application/json" \
-  -d '{"deporte": "surf", "locacion": "Bali"}'
-```
-
-**Response 200:**
-```json
-{
-  "status": "success",
-  "message": "Enriquecimiento completado",
-  "summary": {
-    "total_resultados": 40,
-    "pipelines_ejecutados": ["email", "phone", "social"],
-    "errores": []
-  },
-  "resultados": [
-    {
-      "nombre": "Odysseys Surf School",
-      "tipo_negocio": "escuela",
-      "deporte": "surf",
-      "locacion": "Bali",
-      "website": "https://odysseysurfschool.com",
-      "emails": ["info@odysseysurfschool.com"],
-      "telefonos": ["+6281234567890"],
-      "redes_sociales": {"instagram": "https://instagram.com/odysseysurf"},
-      "fuente": "duckduckgo"
-    }
-  ]
-}
-```
-
----
-
-### `POST /api/scraping/trips`
-
-Busqueda especializada de trips y retreats.
-
-**Body JSON:**
-
-| Campo | Tipo | Obligatorio | Default |
-|---|---|---|---|
-| `deporte` | string | si | — |
-| `locacion` | string | si | — |
-| `max_resultados` | int | no | `30` |
-
-**curl:**
-```bash
-curl -X POST http://localhost:5001/api/scraping/trips \
-  -H "Content-Type: application/json" \
-  -d '{"deporte": "yoga", "locacion": "Costa Rica"}'
-```
-
----
-
-### `GET /api/stats`
-
-Estadisticas de la base de datos. Sin body.
-
-```bash
-curl http://localhost:5001/api/stats
-```
-
----
-
-### `POST /api/scraping/export`
-
-Exporta negocios de la DB. Usar `-o` en curl para guardar a archivo.
-
-**Body JSON:**
-
-| Campo | Tipo | Obligatorio | Default |
-|---|---|---|---|
-| `deporte` | string | no | `null` (todo) |
-| `locacion` | string | no | `null` (todo) |
-| `formato` | string | no | `"json"` |
-
-```bash
-curl -X POST http://localhost:5001/api/scraping/export \
-  -H "Content-Type: application/json" \
-  -d '{"deporte": "surf", "locacion": "Bali"}' -o bali.json
-```
-
----
-
-### `POST /api/contact/email`
-
-Envia emails a negocios. Requiere SMTP o SendGrid en `.env`.
-
-**Body JSON:**
-
-| Campo | Tipo | Obligatorio | Default |
-|---|---|---|---|
-| `deporte` | string | no | `null` |
-| `locacion` | string | no | `null` |
-| `template` | string | no | `"escuela_inicial"` |
-| `max_envios` | int | no | `50` |
-| `dry_run` | bool | no | `true` |
-
-```bash
-curl -X POST http://localhost:5001/api/contact/email \
-  -H "Content-Type: application/json" \
-  -d '{"deporte": "surf", "locacion": "Bali", "dry_run": true}'
-```
-
----
-
-## Codigos de error
-
-```json
-{"status": "error", "message": "Descripcion del error"}
-```
-
-| Codigo | Cuando |
-|---|---|
-| `400` | Falta `deporte` o `locacion`, body invalido, `max_resultados` fuera de rango |
-| `401` | `API_KEY_ENABLED=true` y falta `X-API-KEY` |
-| `500` | Error interno |
-
----
-
-## Flujo de uso tipico
-
-```bash
-# 1. Buscar negocios (~30s)
-curl -X POST http://localhost:5001/api/scraping/search \
-  -H "Content-Type: application/json" \
-  -d '{"deporte": "surf", "locacion": "Bali"}'
-
-# 2. Enriquecer con datos de contacto (~2min, opcional)
-curl -X POST http://localhost:5001/api/scraping/enrich \
-  -H "Content-Type: application/json" \
-  -d '{"deporte": "surf", "locacion": "Bali"}'
-
-# 3. Ver estadisticas
-curl http://localhost:5001/api/stats
-
-# 4. Exportar
-curl -X POST http://localhost:5001/api/scraping/export \
-  -H "Content-Type: application/json" \
-  -d '{"deporte": "surf", "locacion": "Bali"}' -o bali.json
-```
-
-La base de datos se acumula: cada busqueda anade negocios sin borrar los anteriores.
-
----
-
-## Configuracion (.env)
-
-```bash
-DATABASE_URL=sqlite:///data/surf_scraper.db
-
-# Email SMTP
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=tu_email@gmail.com
-SMTP_PASSWORD=tu_app_password
-
-# SendGrid (alternativa)
-SENDGRID_API_KEY=tu_sendgrid_key
-
-# WhatsApp (Twilio, opcional)
-TWILIO_ACCOUNT_SID=tu_sid
-TWILIO_AUTH_TOKEN=tu_token
-TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
-
-# API
-API_KEY_ENABLED=false
-API_KEY=tu_api_key_secreta
-
-# Scraping
-MAX_REQUESTS_PER_MINUTE=30
-DEFAULT_DELAY_SECONDS=2
-MAX_RETRIES=3
-REQUEST_TIMEOUT=30
-```
-
-No se necesitan API keys para buscar. El sistema usa fuentes publicas abiertas (DuckDuckGo + directorios).
-
-## Ejecucion con Docker
-
-```bash
-docker build -t surf-scraper .
-docker run -p 5001:5001 --env-file .env surf-scraper
-```
-
-## Tests
-
-```bash
-python -m pytest tests/ -v
-```
-
----
-
-Built for [Carving Mates](https://www.carvingmates.com)
+## Avisos
+
+- Datos de Yahoo Finance (con caché local si la red falla). Pueden llevar ~1 día de retardo respecto al tiempo real.
+- La nota **no predice el futuro**: mide lo barato que está el ETF respecto a su propia historia reciente y el régimen de riesgo.
+- Rentabilidades pasadas no garantizan rentabilidades futuras. Esto es una herramienta de apoyo a la decisión, **no asesoramiento financiero**.
