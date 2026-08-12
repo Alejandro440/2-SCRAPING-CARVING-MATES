@@ -1,0 +1,35 @@
+{
+  "instrument": {
+    "ticker": "VWCE.DE",
+    "name": "Vanguard FTSE All-World UCITS ETF (USD) Accumulating",
+    "isin": "IE00BK5BQT80",
+    "exchange": "Xetra (IBIS2)",
+    "currency": "EUR",
+    "ter_pct": 0.22,
+    "replication": "Física (muestreo optimizado)",
+    "domicile": "Irlanda",
+    "index": "FTSE All-World"
+  },
+  "proxies": {
+    "long_history_eur": "VWRL.AS",
+    "long_history_usd": "VT",
+    "fx": "EURUSD=X",
+    "vix": "^VIX",
+    "vix3m": "^VIX3M",
+    "us10y": "^TNX",
+    "us3m": "^IRX",
+    "credit_hy": "HYG",
+    "credit_ig": "LQD"
+  },
+  "dca": {
+    "amount_eur": 500,
+    "interval_days": 14,
+    "last_entry_date": null,
+    "score_buy_threshold": 65,
+    "score_strong_threshold": 80
+  },
+  "position": {
+    "shares": 18.7056,
+    "avg_cost_eur": 165.03
+  }
+}
