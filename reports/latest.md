@@ -73,7 +73,7 @@ Probabilidad histórica de ver una caída de al menos x% desde el precio de hoy 
 |---|---|---|---|
 | Prima de riesgo (Fed model) | earnings yield 4.43% − 10a 4.68% = **-0.25 pp** | 35 | 35% |
 | Desviación del canal de tendencia | +1.4σ (+10.6%) | 14 | 25% |
-| Estructura temporal VIX/VIX3M | 0.808 (contango: calma) | 0 | 25% |
+| Estructura temporal VIX/VIX3M | 0.744 (contango: calma) | 0 | 25% |
 | Estrés de crédito (z HYG/LQD 120d) | +2.37σ | 0 | 15% |
 | **Total** | | **16** | 100% |
 
@@ -88,7 +88,7 @@ Lectura: la nota fundamental se mueve despacio (valoración y ciclo); la técnic
 | Métrica | Valor | Comentario |
 |---|---|---|
 | VIX | 15.3 (percentil 5a: 23%) | calma |
-| EURUSD | 1.1541 (-1.0% 3m, -1.0% 1a) | euro fuerte abarata VWCE en EUR |
+| EURUSD | 1.1538 (-1.1% 3m, -1.0% 1a) | euro fuerte abarata VWCE en EUR |
 | Tipos EEUU 10 años | 4.68% (+0.22 pp 3m) | tipos al alza presionan valoraciones |
 | Tendencia largo plazo (CAGR desde 2019) | 11.8% anual | precio +10.6% vs tendencia (+1.4σ) |
 
