@@ -52,8 +52,14 @@ def _buy(res: Result, date, price: float, amount: float):
 
 
 def run_window_strategies(df: pd.DataFrame, amount: float = 500.0, interval_days: int = 14,
-                          score: pd.Series | None = None, score_threshold: float = 65.0) -> dict[str, Result]:
-    """Estrategias que compran exactamente una vez por ventana (sin saltarse ninguna)."""
+                          score: pd.Series | None = None, score_threshold: float = 65.0,
+                          extra_signals: dict[str, tuple[str, pd.Series]] | None = None) -> dict[str, Result]:
+    """Estrategias que compran exactamente una vez por ventana (sin saltarse ninguna).
+
+    `extra_signals`: {clave: (etiqueta, serie booleana)} — regla "primer día
+    en que la señal es True, si no último día". Sirve para probar señales
+    fundamentales (backwardation del VIX, estrés de crédito…).
+    """
     close = df["close"]
     windows = _windows(df.index, interval_days)
 
@@ -67,6 +73,9 @@ def run_window_strategies(df: pd.DataFrame, amount: float = 500.0, interval_days
         "oraculo": Result("Mejor día posible (información perfecta)"),
         "peor_dia": Result("Peor día posible"),
     }
+    extra_signals = extra_signals or {}
+    for key, (label, _) in extra_signals.items():
+        strategies[key] = Result(label)
 
     for days in windows:
         w_close = close.loc[days]
@@ -77,11 +86,14 @@ def run_window_strategies(df: pd.DataFrame, amount: float = 500.0, interval_days
         _buy(strategies["oraculo"], w_close.idxmin(), w_close.min(), amount)
         _buy(strategies["peor_dia"], w_close.idxmax(), w_close.max(), amount)
 
-        for key, cond in (
+        conds = [
             ("caida_1pct", w_close <= ref * 0.99),
             ("caida_2pct", w_close <= ref * 0.98),
             ("rsi_35", df.loc[days, "rsi14"] <= 35),
-        ):
+        ]
+        for key, (_, sig) in extra_signals.items():
+            conds.append((key, sig.reindex(days).fillna(False).astype(bool)))
+        for key, cond in conds:
             hit = cond[cond]
             d = hit.index[0] if len(hit) else days[-1]
             _buy(strategies[key], d, close.loc[d], amount)

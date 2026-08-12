@@ -8,7 +8,9 @@ Sistema de análisis **diario y automático** del ETF **VWCE** (Vanguard FTSE Al
 
 Un workflow de GitHub Actions (`.github/workflows/daily-analysis.yml`) corre de lunes a viernes a las **07:30 (hora española)**, antes de la apertura de Xetra, y publica un informe con:
 
-1. **Nota de entrada (0–100)** — modelo compuesto de reversión a la media al estilo de un desk sistemático: caída desde máximos, RSI(14), distancia a la SMA200, Bollinger %B, z-score 60d y percentil del VIX. Más alta = punto de entrada más favorable *en términos relativos a su propia historia*.
+1. **Nota técnica de entrada (0–100)** — modelo compuesto de reversión a la media al estilo de un desk sistemático: caída desde máximos, RSI(14), distancia a la SMA200, Bollinger %B, z-score 60d y percentil del VIX. Más alta = punto de entrada más favorable *en términos relativos a su propia historia*.
+1. **Nota fundamental (0–100)** — modelo multi-señal tipo estrategas de banco: prima de riesgo (earnings yield del índice mundial vía P/E en vivo menos el bono a 10 años EEUU, el "Fed model"), desviación del canal de tendencia, estructura temporal del VIX (VIX/VIX3M — la backwardation marca capitulación) y estrés de crédito (z-score HYG/LQD). La pendiente de la curva 10a−3m se reporta como contexto de ciclo.
+1. **Niveles de entrada y probabilidades** — a qué precio se dispararía la nota (umbrales 65 y 80) y probabilidad histórica de ver caídas de 1–10 % en 2 semanas / 1 mes / 3 meses.
 2. **Cuadro técnico completo** — medias 50/200, MACD, Bollinger, ATR, volatilidad, rango 52 semanas, régimen de tendencia.
 3. **Contexto macro/fundamental** — VIX, EURUSD (clave: el subyacente es USD y tú compras en EUR), tipos EEUU a 10 años, canal de tendencia de largo plazo y descomposición de la rentabilidad EUR = índice USD + divisa. Ficha del fondo (TER 0,22 %, ~3.900 empresas, acumulación).
 4. **Tu posición** — valor, P&L latente y cómo movería tu precio medio la aportación de hoy (se configura en `config.json`).
@@ -30,7 +32,9 @@ run_daily.py       ← orquestador (python run_daily.py)
 src/
   data.py          ← descarga Yahoo Finance + caché en data/cache/
   indicators.py    ← RSI, MACD, Bollinger, ATR, drawdown, z-score…
-  signals.py       ← nota de entrada 0-100 y recomendación
+  signals.py       ← nota técnica de entrada 0-100 y recomendación
+  fundamental.py   ← P/E en vivo, prima de riesgo, VIX term structure, crédito, curva
+  levels.py        ← niveles que dispararían la nota + probabilidades de caída
   context.py       ← VIX, EURUSD, tipos, canal de tendencia, descomposición FX
   backtest.py      ← estrategias quincenales, oráculo, cash-carry, Monte Carlo
   report.py        ← informe Markdown + gráficos PNG

@@ -17,7 +17,7 @@ import os
 
 import pandas as pd
 
-from src import backtest, context, report, signals
+from src import backtest, context, fundamental, levels, report, signals
 from src.data import freshness, get_history
 from src.indicators import enrich
 
@@ -29,7 +29,8 @@ def load_cfg() -> dict:
         return json.load(f)
 
 
-def run_backtests(cfg: dict, vix_rank_full: pd.Series) -> tuple[list, dict]:
+def run_backtests(cfg: dict, vix_rank_full: pd.Series,
+                  extra_signals: dict | None = None) -> tuple[list, dict]:
     """Backtest sobre VWCE (2019-) y los proxies de histórico largo."""
     datasets = [
         (cfg["instrument"]["ticker"], "VWCE desde 2019 (EUR)", "backtest_vwce.png"),
@@ -44,6 +45,7 @@ def run_backtests(cfg: dict, vix_rank_full: pd.Series) -> tuple[list, dict]:
         strats = backtest.run_window_strategies(
             df, amount=cfg["dca"]["amount_eur"], interval_days=cfg["dca"]["interval_days"],
             score=score, score_threshold=cfg["dca"]["score_buy_threshold"],
+            extra_signals=extra_signals,
         )
         summary = backtest.summarize(strats, df["close"].iloc[-1])
         img = report.chart_backtest(summary, label, fname)
@@ -98,10 +100,20 @@ def main():
     vt = get_history(cfg["proxies"]["long_history_usd"])
     fx = get_history(cfg["proxies"]["fx"])
     vix = get_history(cfg["proxies"]["vix"])
+    vix3m = get_history(cfg["proxies"]["vix3m"])
     tnx = get_history(cfg["proxies"]["us10y"])
+    irx = get_history(cfg["proxies"]["us3m"])
+    hyg = get_history(cfg["proxies"]["credit_hy"])
+    lqd = get_history(cfg["proxies"]["credit_ig"])
 
     vix_ctx = context.vix_context(vix)
     vix_rank = vix_ctx["series_rank"]
+
+    # --- canal fundamental ---
+    vix_ts = fundamental.vix_term_structure(vix, vix3m)
+    credit_z = fundamental.credit_stress_z(hyg, lqd)
+    curve = fundamental.curve_slope(tnx, irx)
+    valuation, val_source = fundamental.valuation_with_fallback(cfg["proxies"]["long_history_usd"])
 
     # --- señales ---
     score_series = signals.entry_score(vwce, vix_rank)
@@ -116,10 +128,31 @@ def main():
     reco = signals.recommendation(score_today, days_since, cfg)
 
     # --- backtests + monte carlo ---
-    backtests_md, cash_carry_info = run_backtests(cfg, vix_rank)
+    extra_signals = {
+        "vix_backwardation": ("Primer día con VIX > VIX3M (pánico), si no último día", vix_ts > 1.0),
+        "credit_stress": ("Primer día con estrés de crédito (z ≤ −1), si no último día", credit_z <= -1.0),
+    }
+    backtests_md, cash_carry_info = run_backtests(cfg, vix_rank, extra_signals)
     mc = backtest.monte_carlo_dca(vt["close"].pct_change(), years=5,
                                   amount=cfg["dca"]["amount_eur"],
                                   interval_days=cfg["dca"]["interval_days"])
+
+    # --- fundamental score + niveles de entrada ---
+    trend = context.trend_channel(vwce["close"])
+    rates = context.rates_context(tnx)
+    fund = fundamental.fundamental_score(
+        valuation, us10y_pct=rates["level_pct"],
+        trend_sigma=trend["deviation_sigma"],
+        vix_ts_now=float(vix_ts.iloc[-1]),
+        credit_z_now=float(credit_z.iloc[-1]),
+    )
+    fund["valuation"] = valuation
+    fund["val_source"] = val_source
+
+    vwce_raw = get_history(cfg["instrument"]["ticker"])
+    trigger_levels = levels.find_trigger_levels(vwce_raw, vix_score=float(components["vix"]))
+    vwrl = get_history(cfg["proxies"]["long_history_eur"])
+    dip_probs_md = levels.dip_probabilities(vwrl["close"]).to_markdown(index=False)
 
     # --- gráficos ---
     charts = {
@@ -145,9 +178,15 @@ def main():
         "lo52": float(tail252.min()),
         "vix": vix_ctx,
         "fx": context.fx_context(fx),
-        "rates": context.rates_context(tnx),
-        "trend": context.trend_channel(vwce["close"]),
+        "rates": rates,
+        "trend": trend,
         "decomp": context.return_decomposition(vwce, vt, fx),
+        "fund": fund,
+        "levels": trigger_levels,
+        "dip_probs": dip_probs_md,
+        "vix_ts": float(vix_ts.iloc[-1]),
+        "credit_z": float(credit_z.iloc[-1]),
+        "curve_slope": float(curve.iloc[-1]),
         "backtests": backtests_md,
         "cash_carry": cash_carry_info,
         "mc": mc,
@@ -169,7 +208,9 @@ def main():
 
     append_score_history(vwce.index[-1], last["close"], score_today, components)
 
-    print(f"[run] nota de entrada: {score_today:.1f} · régimen {ctx['regime']}")
+    print(f"[run] nota técnica: {score_today:.1f} · nota fundamental: {fund['score']:.1f} · régimen {ctx['regime']}")
+    for t, info in sorted(trigger_levels.items()):
+        print(f"[run] nivel nota≥{t:.0f}: ~{info['price']:.2f} € (−{info['drop_pct']:.1f}%)")
     print(f"[run] decisión: {reco}")
     print(f"[run] informe: {latest}")
 

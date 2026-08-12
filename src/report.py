@@ -174,7 +174,8 @@ def build_markdown(ctx: dict) -> str:
     md.append(f"| | |")
     md.append(f"|---|---|")
     md.append(f"| Cierre | **{last['close']:.2f} €** ({_pct(last['ret_1d'], 2)} vs día anterior) |")
-    md.append(f"| Nota de entrada | **{score:.0f} / 100** |")
+    md.append(f"| Nota técnica de entrada | **{score:.0f} / 100** |")
+    md.append(f"| Nota fundamental | **{ctx['fund']['score']:.0f} / 100** |")
     md.append(f"| Régimen | {ctx['regime']} |")
     md.append(f"| Caída desde máximos | {last['drawdown']*100:.1f}% |")
     md.append(f"| Datos a | {ctx['data_date']} ({ctx['staleness']} días) |")
@@ -227,8 +228,67 @@ def build_markdown(ctx: dict) -> str:
     md.append(f"![Drawdown]({ctx['charts']['dd']})")
     md.append("")
 
+    # --- Niveles de entrada ---
+    md.append("## 4 · Niveles de entrada y probabilidad de verlos")
+    md.append("")
+    lv = ctx["levels"]
+    md.append("¿A qué precio se dispararía la nota técnica? (recalculada suponiendo que el precio cae hasta ese nivel, con el VIX de hoy):")
+    md.append("")
+    md.append("| Umbral | Precio aproximado | Caída necesaria |")
+    md.append("|---|---|---|")
+    for t in sorted(lv):
+        md.append(f"| Nota ≥ {t:.0f} | ~{lv[t]['price']:.2f} € | −{lv[t]['drop_pct']:.1f}% |")
+    if not lv:
+        md.append("| — | no se alcanza ni con −30% (mercado en régimen extremo) | |")
+    md.append("")
+    md.append(f"Referencias técnicas cercanas: SMA50 {last['sma50']:.2f} € ({(last['sma50']/last['close']-1)*100:+.1f}%), "
+              f"banda inferior de Bollinger {last['bb_low']:.2f} € ({(last['bb_low']/last['close']-1)*100:+.1f}%), "
+              f"SMA200 {last['sma200']:.2f} € ({(last['sma200']/last['close']-1)*100:+.1f}%).")
+    md.append("")
+    md.append("Probabilidad histórica de ver una caída de al menos x% desde el precio de hoy (frecuencia empírica, índice mundial en EUR desde 2012):")
+    md.append("")
+    md.append(ctx["dip_probs"])
+    md.append("")
+
+    # --- Fundamental ---
+    md.append("## 5 · Análisis fundamental")
+    md.append("")
+    f = ctx["fund"]
+    md.append(f"**Nota fundamental: {f['score']:.0f} / 100** — modelo multi-señal tipo desk bancario (valoración + régimen de riesgo).")
+    md.append("")
+    md.append("| Componente | Valor bruto | Nota | Peso |")
+    md.append("|---|---|---|---|")
+    from .fundamental import WEIGHTS as FW
+    fc = f["components"]
+    erp_raw = (f"earnings yield {f['earnings_yield_pct']:.2f}% − 10a {ctx['rates']['level_pct']:.2f}% = **{f['erp_pct']:+.2f} pp**"
+               if f.get("erp_pct") is not None else "n/d")
+    flabels = {
+        "erp": ("Prima de riesgo (Fed model)", erp_raw),
+        "trend": ("Desviación del canal de tendencia", f"{ctx['trend']['deviation_sigma']:+.1f}σ ({ctx['trend']['deviation_pct']:+.1f}%)"),
+        "vix_term": ("Estructura temporal VIX/VIX3M", f"{ctx['vix_ts']:.3f} ({'backwardation: pánico' if ctx['vix_ts']>1 else 'contango: calma'})"),
+        "credit": ("Estrés de crédito (z HYG/LQD 120d)", f"{ctx['credit_z']:+.2f}σ"),
+    }
+    for k, w in FW.items():
+        name, rawv = flabels[k]
+        nota = f"{fc[k]:.0f}" if fc[k] is not None else "n/d"
+        md.append(f"| {name} | {rawv} | {nota} | {w:.0%} |")
+    md.append(f"| **Total** | | **{f['score']:.0f}** | 100% |")
+    md.append("")
+    if f.get("valuation"):
+        val = f["valuation"]
+        pb = f" · P/B {val['pb']:.1f}" if val.get("pb") else ""
+        dy = f" · rentabilidad por dividendo {val['div_yield']*100:.2f}%" if val.get("div_yield") else ""
+        md.append(f"Valoración del índice mundial (vía VT): **P/E {val['pe']:.1f}**{pb}{dy} · fuente: {f['val_source']}.")
+        md.append("")
+    md.append(f"Ciclo (contexto, no puntúa): pendiente de la curva EEUU 10a − 3m = {ctx['curve_slope']:+.2f} pp "
+              f"({'invertida — señal clásica de fin de ciclo' if ctx['curve_slope']<0 else 'positiva — sin señal de recesión inminente por curva'}).")
+    md.append("")
+    md.append("Lectura: la nota fundamental se mueve despacio (valoración y ciclo); la técnica, rápido (precio). "
+              "Las mejores entradas históricas coinciden cuando **ambas** están altas — pánico con valoraciones comprimidas.")
+    md.append("")
+
     # --- Contexto macro / fundamental ---
-    md.append("## 4 · Contexto macro y fundamental")
+    md.append("## 6 · Contexto macro")
     md.append("")
     v, fx, rt, tc, dec = ctx["vix"], ctx["fx"], ctx["rates"], ctx["trend"], ctx["decomp"]
     md.append("| Métrica | Valor | Comentario |")
@@ -247,7 +307,7 @@ def build_markdown(ctx: dict) -> str:
     md.append("")
 
     # --- Posición personal ---
-    md.append("## 5 · Tu posición y próxima entrada")
+    md.append("## 7 · Tu posición y próxima entrada")
     md.append("")
     pos = cfg["position"]
     mkt_val = pos["shares"] * last["close"]
@@ -265,7 +325,7 @@ def build_markdown(ctx: dict) -> str:
     md.append("")
 
     # --- Backtest ---
-    md.append("## 6 · Backtest de estrategias de entrada quincenal")
+    md.append("## 8 · Backtest de estrategias de entrada quincenal")
     md.append("")
     md.append("Cada estrategia invierte **500 € una vez por ventana de 14 días**; solo cambia el día elegido. "
               "\"pb\" = puntos básicos de mejora del precio medio de compra frente a comprar siempre el primer día. "
@@ -286,7 +346,7 @@ def build_markdown(ctx: dict) -> str:
 
     # --- Monte Carlo ---
     mc = ctx["mc"]
-    md.append("## 7 · Simulación Monte Carlo (plan actual a 5 años)")
+    md.append("## 9 · Simulación Monte Carlo (plan actual a 5 años)")
     md.append("")
     md.append(f"Bootstrap por bloques de los rendimientos diarios históricos ({mc['n_paths']} escenarios, "
               f"aportando 500 € cada 14 días durante {mc['years']} años = {mc['invested']:,.0f} € aportados):")

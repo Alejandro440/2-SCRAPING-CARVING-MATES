@@ -15,7 +15,11 @@
     "long_history_usd": "VT",
     "fx": "EURUSD=X",
     "vix": "^VIX",
-    "us10y": "^TNX"
+    "vix3m": "^VIX3M",
+    "us10y": "^TNX",
+    "us3m": "^IRX",
+    "credit_hy": "HYG",
+    "credit_ig": "LQD"
   },
   "dca": {
     "amount_eur": 500,
